@@ -1,0 +1,34 @@
+{
+  "id": "mslr",
+  "name": "MSLR-WEB10K Learning to Rank",
+  "description": "Ranking — 136 features, relevance 0-4. XGBoost LambdaMART ranker.",
+  "train_script": "python/mslr_example/run_mslr_example.py",
+  "import_id": "mslr",
+  "models_dir": "python/mslr_example/models",
+  "infer_script": "python/dataset_tool.py",
+  "infer_type": "ranking",
+  "params": [
+    {
+      "name": "n_queries",
+      "label": "Number of Queries",
+      "type": "integer",
+      "default": 200,
+      "min": 10,
+      "max": 50000,
+      "step": 50,
+      "cli_arg": "--n-queries"
+    },
+    {
+      "name": "docs_per_query",
+      "label": "Docs per Query",
+      "type": "integer",
+      "default": 40,
+      "min": 5,
+      "max": 200,
+      "step": 5,
+      "cli_arg": "--docs-per-query"
+    }
+  ],
+  "metrics": ["ndcg_1", "ndcg_5", "ndcg_10", "map_score"],
+  "primary_metric": "ndcg_5"
+}

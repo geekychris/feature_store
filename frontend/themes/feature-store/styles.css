@@ -1,0 +1,128 @@
+/* Feature Store Admin UI Theme */
+
+:root {
+    --fs-primary: #1565C0;
+    --fs-success: #2E7D32;
+    --fs-warning: #F57F17;
+    --fs-danger: #C62828;
+    --fs-bg: #FAFAFA;
+}
+
+html {
+    --lumo-primary-color: var(--fs-primary);
+}
+
+.dashboard-card {
+    padding: var(--lumo-space-l);
+    border-radius: var(--lumo-border-radius-l);
+    background: var(--lumo-base-color);
+    box-shadow: var(--lumo-box-shadow-s);
+    text-align: center;
+}
+
+.dashboard-card h2 {
+    margin: 0;
+    font-size: var(--lumo-font-size-xxxl);
+    color: var(--fs-primary);
+}
+
+.dashboard-card span {
+    color: var(--lumo-secondary-text-color);
+    font-size: var(--lumo-font-size-s);
+}
+
+.log-area {
+    font-family: monospace;
+    font-size: var(--lumo-font-size-s);
+    background: #1E1E1E;
+    color: #D4D4D4;
+    padding: var(--lumo-space-m);
+    border-radius: var(--lumo-border-radius-m);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-y: auto;
+    max-height: 500px;
+}
+
+.status-active {
+    color: var(--fs-success);
+    font-weight: bold;
+}
+
+.status-deprecated {
+    color: var(--fs-warning);
+    font-weight: bold;
+}
+
+.status-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: var(--lumo-font-size-xs);
+    font-weight: 600;
+}
+
+.status-badge.active {
+    background: #E8F5E9;
+    color: var(--fs-success);
+}
+
+.status-badge.deprecated {
+    background: #FFF3E0;
+    color: var(--fs-warning);
+}
+
+.status-badge.running {
+    background: #E3F2FD;
+    color: var(--fs-primary);
+}
+
+.status-badge.failed {
+    background: #FFEBEE;
+    color: var(--fs-danger);
+}
+
+.status-badge.completed {
+    background: #E8F5E9;
+    color: var(--fs-success);
+}
+
+/* Dataset selector */
+.dataset-selector {
+    max-width: 500px;
+}
+
+.dataset-description {
+    margin-top: 0;
+    color: var(--lumo-secondary-text-color);
+    font-size: var(--lumo-font-size-s);
+    font-style: italic;
+}
+
+/* Hyperparameter tuning */
+.hyperparam-details {
+    width: 100%;
+    border: 1px solid var(--lumo-contrast-10pct);
+    border-radius: var(--lumo-border-radius-m);
+    padding: var(--lumo-space-s);
+}
+
+.hyperparam-panel vaadin-integer-field,
+.hyperparam-panel vaadin-number-field {
+    max-width: 140px;
+}
+
+/* Import button */
+.import-btn {
+    --lumo-contrast-5pct: #E3F2FD;
+}
+
+/* Compact editable cells in inference grid */
+.editable-cell {
+    --lumo-text-field-size: var(--lumo-size-xs);
+    font-size: var(--lumo-font-size-xs);
+}
+
+.editable-cell::part(input-field) {
+    padding: 0 4px;
+    min-height: var(--lumo-size-xs);
+}

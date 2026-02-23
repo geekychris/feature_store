@@ -1,0 +1,24 @@
+{
+  "id": "criteo",
+  "name": "Criteo CTR Prediction",
+  "description": "Click prediction — 39 features (13 numeric + 26 categorical). XGBoost binary classifier.",
+  "train_script": "python/criteo_example/run_criteo_example.py",
+  "import_id": "criteo",
+  "models_dir": "python/criteo_example/models",
+  "infer_script": "python/dataset_tool.py",
+  "infer_type": "ctr",
+  "params": [
+    {
+      "name": "n_samples",
+      "label": "Number of Samples",
+      "type": "integer",
+      "default": 100000,
+      "min": 1000,
+      "max": 10000000,
+      "step": 10000,
+      "cli_arg": "--n-samples"
+    }
+  ],
+  "metrics": ["auc_roc", "auc_pr", "logloss"],
+  "primary_metric": "auc_roc"
+}

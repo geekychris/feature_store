@@ -1,0 +1,274 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Detecting the operating system and CPU architecture
+[INFO] ------------------------------------------------------------------------
+[INFO] os.detected.name: osx
+[INFO] os.detected.arch: aarch_64
+[INFO] os.detected.bitness: 64
+[INFO] os.detected.version: 26.2
+[INFO] os.detected.version.major: 26
+[INFO] os.detected.version.minor: 2
+[INFO] os.detected.classifier: osx-aarch_64
+[INFO] 
+[INFO] ---------------------< com.platform:feature-store >---------------------
+[INFO] Building Feature Store 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.4.3:run (default-cli) > test-compile @ feature-store >>>
+[INFO] 
+[INFO] --- protobuf:0.6.1:compile (default) @ feature-store ---
+[INFO] Compiling 1 proto file(s) to /Users/chris/code/warp_experiments/feature_store/target/generated-sources/protobuf/java
+[INFO] 
+[INFO] --- protobuf:0.6.1:compile-custom (default) @ feature-store ---
+[INFO] Compiling 1 proto file(s) to /Users/chris/code/warp_experiments/feature_store/target/generated-sources/protobuf/grpc-java
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ feature-store ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] Copying 1 resource from src/main/proto to target/classes
+[INFO] Copying 1 resource from src/main/proto to target/classes
+[INFO] 
+[INFO] >>> vaadin:24.6.3:prepare-frontend (default) > :configure @ feature-store >>>
+[INFO] 
+[INFO] --- vaadin:24.6.3:configure (configure) @ feature-store ---
+[INFO] 
+[INFO] <<< vaadin:24.6.3:prepare-frontend (default) < :configure @ feature-store <<<
+[INFO] 
+[INFO] 
+[INFO] --- vaadin:24.6.3:prepare-frontend (default) @ feature-store ---
+[INFO] Reflections took 887 ms to scan 353 urls, producing 22054 keys and 115738 values
+[INFO] Visited 107 classes. Took 52 ms.
+[INFO] Copying frontend resources from jar files ...
+[INFO] Visited 340 resources. Took 139 ms.
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ feature-store ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 81 source files with javac [debug parameters release 21] to target/classes
+[INFO] /Users/chris/code/warp_experiments/feature_store/src/main/java/com/platform/featurestore/ui/TrainingView.java: /Users/chris/code/warp_experiments/feature_store/src/main/java/com/platform/featurestore/ui/TrainingView.java uses or overrides a deprecated API.
+[INFO] /Users/chris/code/warp_experiments/feature_store/src/main/java/com/platform/featurestore/ui/TrainingView.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] >>> vaadin:24.6.3:build-frontend (default) > :configure @ feature-store >>>
+[INFO] 
+[INFO] --- vaadin:24.6.3:configure (configure) @ feature-store ---
+[INFO] 
+[INFO] <<< vaadin:24.6.3:build-frontend (default) < :configure @ feature-store <<<
+[INFO] 
+[INFO] 
+[INFO] --- vaadin:24.6.3:build-frontend (default) @ feature-store ---
+[INFO] Reflections took 534 ms to scan 353 urls, producing 22054 keys and 115738 values
+[INFO] Scanning classes to find frontend configurations and dependencies...
+[INFO] Visited 12514 classes. Took 2522 ms.
+[INFO] Checking if a production mode bundle build is needed
+[INFO] A production mode bundle build is not needed
+[INFO] Copying frontend resources from jar files ...
+[INFO] Visited 340 resources. Took 64 ms.
+[INFO] Scanning classes to find frontend configurations and dependencies...
+[INFO] Visited 12514 classes. Took 2171 ms.
+[INFO] Build frontend completed in 4979 ms.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ feature-store ---
+[INFO] skip non existing resourceDirectory /Users/chris/code/warp_experiments/feature_store/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ feature-store ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 6 source files with javac [debug parameters release 21] to target/test-classes
+[INFO] 
+[INFO] <<< spring-boot:3.4.3:run (default-cli) < test-compile @ feature-store <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.4.3:run (default-cli) @ feature-store ---
+[INFO] Attaching agents: []
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.4.3)
+
+2026-02-22T18:34:38.507-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.FeatureStoreApplication            : Starting FeatureStoreApplication using Java 21.0.7 with PID 63478 (/Users/chris/code/warp_experiments/feature_store/target/classes started by chris in /Users/chris/code/warp_experiments/feature_store)
+2026-02-22T18:34:38.508-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.FeatureStoreApplication            : No active profile set, falling back to 1 default profile: "default"
+2026-02-22T18:34:38.981-08:00  INFO 63478 --- [feature-store] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-02-22T18:34:38.982-08:00  INFO 63478 --- [feature-store] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-02-22T18:34:39.065-08:00  INFO 63478 --- [feature-store] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 79 ms. Found 5 JPA repository interfaces.
+2026-02-22T18:34:39.071-08:00  INFO 63478 --- [feature-store] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-02-22T18:34:39.071-08:00  INFO 63478 --- [feature-store] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-02-22T18:34:39.079-08:00  INFO 63478 --- [feature-store] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.platform.featurestore.repository.EntityDefinitionRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-22T18:34:39.079-08:00  INFO 63478 --- [feature-store] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.platform.featurestore.repository.FeatureDefinitionRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-22T18:34:39.079-08:00  INFO 63478 --- [feature-store] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.platform.featurestore.repository.FeatureLifecycleEventRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-22T18:34:39.079-08:00  INFO 63478 --- [feature-store] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.platform.featurestore.repository.FeatureStatisticsRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-22T18:34:39.079-08:00  INFO 63478 --- [feature-store] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.platform.featurestore.repository.FeatureViewRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-22T18:34:39.079-08:00  INFO 63478 --- [feature-store] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 4 ms. Found 0 Redis repository interfaces.
+2026-02-22T18:34:39.437-08:00  INFO 63478 --- [feature-store] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with ports 8085 (http), 8086 (http)
+2026-02-22T18:34:39.444-08:00  INFO 63478 --- [feature-store] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-02-22T18:34:39.444-08:00  INFO 63478 --- [feature-store] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.36]
+2026-02-22T18:34:39.477-08:00  INFO 63478 --- [feature-store] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-02-22T18:34:39.477-08:00  INFO 63478 --- [feature-store] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 953 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-02-22T18:34:39.561-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereHandler com.vaadin.hilla.push.PushEndpoint mapped to context-path: /HILLA/push
+2026-02-22T18:34:39.561-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed the following AtmosphereInterceptor mapped to AtmosphereHandler com.vaadin.hilla.push.PushEndpoint
+2026-02-22T18:34:39.561-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.AtmosphereResourceLifecycleInterceptor : Atmosphere LifeCycle
+2026-02-22T18:34:39.561-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.client.TrackMessageSizeInterceptor :  Track Message Size Interceptor using |
+2026-02-22T18:34:39.561-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.SuspendTrackerInterceptor : UUID Tracking Interceptor
+2026-02-22T18:34:39.625-08:00  INFO 63478 --- [feature-store] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing AtmosphereFramework
+2026-02-22T18:34:39.874-08:00  INFO 63478 --- [feature-store] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-02-22T18:34:39.958-08:00  INFO 63478 --- [feature-store] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@64e3bc2
+2026-02-22T18:34:39.958-08:00  INFO 63478 --- [feature-store] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-02-22T18:34:39.972-08:00  INFO 63478 --- [feature-store] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:5433/feature_store (PostgreSQL 16.12)
+2026-02-22T18:34:40.010-08:00  INFO 63478 --- [feature-store] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 1 migration (execution time 00:00.016s)
+2026-02-22T18:34:40.036-08:00  INFO 63478 --- [feature-store] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "public": 1
+2026-02-22T18:34:40.037-08:00  INFO 63478 --- [feature-store] [           main] o.f.core.internal.command.DbMigrate      : Schema "public" is up to date. No migration necessary.
+2026-02-22T18:34:40.083-08:00  INFO 63478 --- [feature-store] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-02-22T18:34:40.106-08:00  INFO 63478 --- [feature-store] [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.8.Final
+2026-02-22T18:34:40.121-08:00  INFO 63478 --- [feature-store] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-02-22T18:34:40.237-08:00  INFO 63478 --- [feature-store] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-02-22T18:34:40.262-08:00  WARN 63478 --- [feature-store] [           main] org.hibernate.orm.deprecation            : HHH90000025: PostgreSQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-02-22T18:34:40.269-08:00  INFO 63478 --- [feature-store] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 16.12
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-02-22T18:34:40.757-08:00  INFO 63478 --- [feature-store] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-02-22T18:34:40.792-08:00  INFO 63478 --- [feature-store] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-02-22T18:34:41.337-08:00  INFO 63478 --- [feature-store] [           main] c.p.featurestore.config.RocksDBConfig    : RocksDB opened at /tmp/feature-store/rocksdb with 5 column families
+2026-02-22T18:34:41.423-08:00 ERROR 63478 --- [feature-store] [           main] i.n.r.d.DnsServerAddressStreamProviders  : Unable to load io.netty.resolver.dns.macos.MacOSDnsServerAddressStreamProvider, fallback to system defaults. This may result in incorrect DNS resolutions on MacOS. Check whether you have a dependency on 'io.netty:netty-resolver-dns-native-macos'. Use DEBUG level to see the full stack: java.lang.UnsatisfiedLinkError: failed to load the required native library
+2026-02-22T18:34:41.757-08:00  WARN 63478 --- [feature-store] [           main] o.apache.hadoop.util.NativeCodeLoader    : Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-02-22T18:34:41.788-08:00  INFO 63478 --- [feature-store] [           main] org.apache.iceberg.CatalogUtil           : Loading custom FileIO implementation: org.apache.iceberg.hadoop.HadoopFileIO
+2026-02-22T18:34:41.801-08:00  INFO 63478 --- [feature-store] [           main] c.p.featurestore.config.IcebergConfig    : Iceberg HadoopCatalog initialized at /tmp/feature-store/iceberg
+2026-02-22T18:34:41.829-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.service.DatasetDiscoveryService    : Discovered dataset: Criteo CTR Prediction (/Users/chris/code/warp_experiments/feature_store/python/criteo_example/dataset_manifest.json)
+2026-02-22T18:34:41.830-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.service.DatasetDiscoveryService    : Discovered dataset: MSLR-WEB10K Learning to Rank (/Users/chris/code/warp_experiments/feature_store/python/mslr_example/dataset_manifest.json)
+2026-02-22T18:34:41.830-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.service.DatasetDiscoveryService    : Discovered dataset: Merchant Fraud Risk (GBDT) (/Users/chris/code/warp_experiments/feature_store/python/gbdt_example/dataset_manifest.json)
+2026-02-22T18:34:41.830-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.service.DatasetDiscoveryService    : Dataset discovery complete: 3 dataset(s) found
+2026-02-22T18:34:41.856-08:00  WARN 63478 --- [feature-store] [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-02-22T18:34:42.075-08:00  INFO 63478 --- [feature-store] [           main] g.s.a.GrpcServerFactoryAutoConfiguration : Detected grpc-netty-shaded: Creating ShadedNettyGrpcServerFactory
+2026-02-22T18:34:42.113-08:00  INFO 63478 --- [feature-store] [           main] n.d.b.g.c.a.GrpcClientAutoConfiguration  : Detected grpc-netty-shaded: Creating ShadedNettyChannelFactory + InProcessChannelFactory
+2026-02-22T18:34:42.317-08:00  INFO 63478 --- [feature-store] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 3 endpoints beneath base path '/actuator'
+2026-02-22T18:34:42.338-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereHandler com.vaadin.flow.server.communication.PushAtmosphereHandler mapped to context-path: /*
+2026-02-22T18:34:42.338-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed the following AtmosphereInterceptor mapped to AtmosphereHandler com.vaadin.flow.server.communication.PushAtmosphereHandler
+2026-02-22T18:34:42.349-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere is using org.atmosphere.util.VoidAnnotationProcessor for processing annotation
+2026-02-22T18:34:42.352-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.util.ForkJoinPool         : Using ForkJoinPool  java.util.concurrent.ForkJoinPool. Set the org.atmosphere.cpr.broadcaster.maxAsyncWriteThreads to -1 to fully use its power.
+2026-02-22T18:34:42.354-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed WebSocketProtocol org.atmosphere.websocket.protocol.SimpleHttpProtocol 
+2026-02-22T18:34:42.355-08:00  INFO 63478 --- [feature-store] [           main] o.a.container.JSR356AsyncSupport         : JSR 356 Mapping path /ui/VAADIN/push
+2026-02-22T18:34:42.358-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installing Default AtmosphereInterceptors
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.CorsInterceptor : CORS Interceptor Support
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.CacheHeadersInterceptor : Default Response's Headers Interceptor
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.PaddingAtmosphereInterceptor : Browser Padding Interceptor Support
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.AndroidAtmosphereInterceptor : Android Interceptor Support
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.HeartbeatInterceptor : Heartbeat Interceptor Support
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.SSEAtmosphereInterceptor : SSE Interceptor Support
+2026-02-22T18:34:42.359-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.JSONPAtmosphereInterceptor : JSONP Interceptor Support
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.JavaScriptProtocol : Atmosphere JavaScript Protocol
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.WebSocketMessageSuspendInterceptor : org.atmosphere.interceptor.WebSocketMessageSuspendInterceptor
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.OnDisconnectInterceptor : Browser disconnection detection
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.IdleResourceInterceptor : org.atmosphere.interceptor.IdleResourceInterceptor
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Set org.atmosphere.cpr.AtmosphereInterceptor.disableDefaults to disable them.
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor CORS Interceptor Support with priority FIRST_BEFORE_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Default Response's Headers Interceptor with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Browser Padding Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Android Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] o.a.interceptor.HeartbeatInterceptor     : HeartbeatInterceptor configured with padding value 'X', client frequency 0 seconds and server frequency 60 seconds
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Heartbeat Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor SSE Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor JSONP Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Atmosphere JavaScript Protocol with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor org.atmosphere.interceptor.WebSocketMessageSuspendInterceptor with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Browser disconnection detection with priority AFTER_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor org.atmosphere.interceptor.IdleResourceInterceptor with priority BEFORE_DEFAULT 
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using EndpointMapper class org.atmosphere.util.DefaultEndpointMapper
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using BroadcasterCache: org.atmosphere.cache.UUIDBroadcasterCache
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Default Broadcaster Class: org.atmosphere.cpr.DefaultBroadcaster
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Broadcaster Shared List Resources: false
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Broadcaster Polling Wait Time 100
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Shared ExecutorService supported: true
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Messaging ExecutorService Pool Size unavailable - Not instance of ThreadPoolExecutor
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Async I/O Thread Pool Size: 200
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using BroadcasterFactory: org.atmosphere.cpr.DefaultBroadcasterFactory
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using AtmosphereResurceFactory: org.atmosphere.cpr.DefaultAtmosphereResourceFactory
+2026-02-22T18:34:42.360-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using WebSocketProcessor: org.atmosphere.websocket.DefaultWebSocketProcessor
+2026-02-22T18:34:42.361-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Invoke AtmosphereInterceptor on WebSocket message true
+2026-02-22T18:34:42.361-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : HttpSession supported: true
+2026-02-22T18:34:42.361-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere is using org.atmosphere.inject.InjectableObjectFactory for dependency injection and object creation
+2026-02-22T18:34:42.361-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere is using async support: org.atmosphere.container.JSR356AsyncSupport running under container: Apache Tomcat/10.1.36 using jakarta.servlet/3.0 and jsr356/WebSocket API
+2026-02-22T18:34:42.361-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere Framework 3.0.5.slf4jvaadin1 started.
+2026-02-22T18:34:42.362-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor  Track Message Size Interceptor using | with priority BEFORE_DEFAULT 
+2026-02-22T18:34:42.384-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere is using org.atmosphere.cpr.DefaultAnnotationProcessor for processing annotation
+2026-02-22T18:34:42.384-08:00  INFO 63478 --- [feature-store] [           main] o.a.cpr.DefaultAnnotationProcessor       : AnnotationProcessor class org.atmosphere.cpr.DefaultAnnotationProcessor$BytecodeBasedAnnotationProcessor being used
+2026-02-22T18:34:44.743-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Auto detecting WebSocketHandler in /WEB-INF/classes/
+2026-02-22T18:34:44.743-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed WebSocketProtocol org.atmosphere.websocket.protocol.SimpleHttpProtocol 
+2026-02-22T18:34:44.743-08:00  INFO 63478 --- [feature-store] [           main] o.a.container.JSR356AsyncSupport         : JSR 356 Mapping path /HILLA/push
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installing Default AtmosphereInterceptors
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.CorsInterceptor : CORS Interceptor Support
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.CacheHeadersInterceptor : Default Response's Headers Interceptor
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.PaddingAtmosphereInterceptor : Browser Padding Interceptor Support
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.AndroidAtmosphereInterceptor : Android Interceptor Support
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.HeartbeatInterceptor : Heartbeat Interceptor Support
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.SSEAtmosphereInterceptor : SSE Interceptor Support
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.JSONPAtmosphereInterceptor : JSONP Interceptor Support
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.JavaScriptProtocol : Atmosphere JavaScript Protocol
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.WebSocketMessageSuspendInterceptor : org.atmosphere.interceptor.WebSocketMessageSuspendInterceptor
+2026-02-22T18:34:44.744-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.OnDisconnectInterceptor : Browser disconnection detection
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : 	org.atmosphere.interceptor.IdleResourceInterceptor : org.atmosphere.interceptor.IdleResourceInterceptor
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Set org.atmosphere.cpr.AtmosphereInterceptor.disableDefaults to disable them.
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor CORS Interceptor Support with priority FIRST_BEFORE_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Default Response's Headers Interceptor with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Browser Padding Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Android Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] o.a.interceptor.HeartbeatInterceptor     : HeartbeatInterceptor configured with padding value 'X', client frequency 0 seconds and server frequency 60 seconds
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Heartbeat Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor SSE Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor JSONP Interceptor Support with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Atmosphere JavaScript Protocol with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor org.atmosphere.interceptor.WebSocketMessageSuspendInterceptor with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor Browser disconnection detection with priority AFTER_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Installed AtmosphereInterceptor org.atmosphere.interceptor.IdleResourceInterceptor with priority BEFORE_DEFAULT 
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using EndpointMapper class org.atmosphere.util.DefaultEndpointMapper
+2026-02-22T18:34:44.745-08:00  WARN 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : No BroadcasterCache configured. Broadcasted message between client reconnection will be LOST. It is recommended to configure the org.atmosphere.cache.UUIDBroadcasterCache
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Default Broadcaster Class: org.atmosphere.util.SimpleBroadcaster
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Broadcaster Shared List Resources: false
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Broadcaster Polling Wait Time 100
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Shared ExecutorService supported: true
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.util.ForkJoinPool         : Using ForkJoinPool  java.util.concurrent.ForkJoinPool. Set the org.atmosphere.cpr.broadcaster.maxAsyncWriteThreads to -1 to fully use its power.
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Messaging ExecutorService Pool Size unavailable - Not instance of ThreadPoolExecutor
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Async I/O Thread Pool Size: 200
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using BroadcasterFactory: org.atmosphere.cpr.DefaultBroadcasterFactory
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using AtmosphereResurceFactory: org.atmosphere.cpr.DefaultAtmosphereResourceFactory
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Using WebSocketProcessor: org.atmosphere.websocket.DefaultWebSocketProcessor
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Invoke AtmosphereInterceptor on WebSocket message true
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : HttpSession supported: false
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere is using org.atmosphere.inject.InjectableObjectFactory for dependency injection and object creation
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere is using async support: org.atmosphere.container.JSR356AsyncSupport running under container: Apache Tomcat/10.1.36 using jakarta.servlet/3.0 and jsr356/WebSocket API
+2026-02-22T18:34:44.745-08:00  INFO 63478 --- [feature-store] [           main] org.atmosphere.cpr.AtmosphereFramework   : Atmosphere Framework 3.0.5.slf4jvaadin1 started.
+2026-02-22T18:34:44.750-08:00  INFO 63478 --- [feature-store] [           main] c.v.f.s.DefaultDeploymentConfiguration   : Vaadin is running in production mode.
+2026-02-22T18:34:44.758-08:00  INFO 63478 --- [feature-store] [           main] c.vaadin.flow.spring.SpringInstantiator  : The number of beans implementing 'I18NProvider' is 0. Cannot use Spring beans for I18N, falling back to the default behavior
+2026-02-22T18:34:45.012-08:00  INFO 63478 --- [feature-store] [       Thread-4] org.atmosphere.cpr.AtmosphereFramework   : Latest version of Atmosphere's JavaScript Client 3.1.4
+2026-02-22T18:34:45.015-08:00  INFO 63478 --- [feature-store] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on ports 8085 (http), 8086 (http) with context path '/'
+2026-02-22T18:34:45.053-08:00  INFO 63478 --- [feature-store] [           main] n.d.b.g.s.s.AbstractGrpcServerFactory    : Registered gRPC service: com.platform.featurestore.FeatureStoreService, bean: featureStoreGrpcService, class: com.platform.featurestore.grpc.FeatureStoreGrpcService
+2026-02-22T18:34:45.053-08:00  INFO 63478 --- [feature-store] [           main] n.d.b.g.s.s.AbstractGrpcServerFactory    : Registered gRPC service: grpc.health.v1.Health, bean: grpcHealthService, class: io.grpc.protobuf.services.HealthServiceImpl
+2026-02-22T18:34:45.053-08:00  INFO 63478 --- [feature-store] [           main] n.d.b.g.s.s.AbstractGrpcServerFactory    : Registered gRPC service: grpc.reflection.v1alpha.ServerReflection, bean: protoReflectionService, class: io.grpc.protobuf.services.ProtoReflectionService
+2026-02-22T18:34:45.110-08:00  INFO 63478 --- [feature-store] [           main] n.d.b.g.s.s.GrpcServerLifecycle          : gRPC Server started, listening on address: *, port: 9090
+2026-02-22T18:34:45.118-08:00  INFO 63478 --- [feature-store] [           main] c.p.f.FeatureStoreApplication            : Started FeatureStoreApplication in 6.814 seconds (process running for 7.001)
+2026-02-22T18:34:48.280-08:00  INFO 63478 --- [feature-store] [io-8086-exec-10] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-02-22T18:34:48.280-08:00  INFO 63478 --- [feature-store] [io-8086-exec-10] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-02-22T18:34:48.281-08:00  INFO 63478 --- [feature-store] [io-8086-exec-10] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-02-22T18:34:51.970-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] n.d.b.g.s.s.GrpcServerLifecycle          : Completed gRPC server shutdown
+2026-02-22T18:34:51.971-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] o.s.b.w.e.tomcat.GracefulShutdown        : Commencing graceful shutdown. Waiting for active requests to complete
+2026-02-22T18:34:51.974-08:00  INFO 63478 --- [feature-store] [tomcat-shutdown] o.s.b.w.e.tomcat.GracefulShutdown        : Graceful shutdown complete
+2026-02-22T18:34:51.985-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] c.p.featurestore.config.RocksDBConfig    : Closing RocksDB...
+2026-02-22T18:34:51.985-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-02-22T18:34:51.986-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-02-22T18:34:51.987-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-02-22T18:34:51.989-08:00  INFO 63478 --- [feature-store] [ionShutdownHook] org.atmosphere.util.ForkJoinPool         : Using ForkJoinPool  java.util.concurrent.ForkJoinPool. Set the org.atmosphere.cpr.broadcaster.maxAsyncWriteThreads to -1 to fully use its power.
+2026-02-22T18:34:51.989-08:00  WARN 63478 --- [feature-store] [ionShutdownHook] org.atmosphere.cpr.DefaultBroadcaster    : AtmosphereResource 9440efae-40d0-40fb-bd47-a8709813ea8c is not suspended. If cached messages exists, this may cause unexpected situation. Suspend first
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  24.899 s
+[INFO] Finished at: 2026-02-22T18:34:52-08:00
+[INFO] ------------------------------------------------------------------------

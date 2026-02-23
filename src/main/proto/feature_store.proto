@@ -1,0 +1,211 @@
+syntax = "proto3";
+
+package com.platform.featurestore;
+
+option java_multiple_files = true;
+option java_package = "com.platform.featurestore.proto";
+option java_outer_classname = "FeatureStoreProto";
+
+// -----------------------------------------------
+// Core value types
+// -----------------------------------------------
+
+message FeatureValue {
+    oneof value {
+        double  float64_val       = 1;
+        float   float32_val       = 2;
+        int64   int64_val         = 3;
+        int32   int32_val         = 4;
+        bool    bool_val          = 5;
+        string  string_val        = 6;
+        bytes   bytes_val         = 7;
+        Float64List float64_list_val = 8;  // embedding vectors
+        Float32List float32_list_val = 9;
+    }
+}
+
+message Float64List {
+    repeated double values = 1;
+}
+
+message Float32List {
+    repeated float values = 1;
+}
+
+// A single named feature with its value and metadata
+message Feature {
+    string       name          = 1;
+    FeatureValue value         = 2;
+    int64        event_time_ms = 3;  // epoch millis when the value was computed
+    int64        created_at_ms = 4;  // epoch millis when stored
+    string       version       = 5;
+    bool         is_default    = 6;  // true if this is a fill value, not observed
+}
+
+// -----------------------------------------------
+// The flattened feature vector — primary serving format
+// -----------------------------------------------
+
+message FeatureVector {
+    // Identity
+    string view_name    = 1;
+    int32  view_version = 2;
+    string entity_type  = 3;
+    string entity_id    = 4;
+
+    // The ordered float vector ready for model consumption
+    // Positions match feature_view_members.position exactly
+    repeated double values = 5;
+
+    // Validity metadata per slot (mirrors values by index)
+    repeated bool  is_default_mask = 6;  // true at index i if values[i] is a fill
+    repeated int64 value_ages_ms   = 7;  // age of each value at serve time
+
+    // Envelope
+    int64  served_at_ms = 8;
+    string request_id   = 9;   // for tracing
+    int32  schema_hash  = 10;  // hash of the view schema for validation
+}
+
+// -----------------------------------------------
+// Rich record format — used for offline storage and training
+// -----------------------------------------------
+
+message FeatureRecord {
+    string          entity_type    = 1;
+    string          entity_id      = 2;
+    int64           event_time_ms  = 3;
+    repeated Feature features      = 4;  // named, sparse
+    string          source_pipeline = 5;
+    string          pipeline_run_id = 6;
+    map<string, string> metadata   = 7;
+}
+
+// -----------------------------------------------
+// Request/response for online serving
+// -----------------------------------------------
+
+message GetFeaturesRequest {
+    string          view_name        = 1;
+    int32           view_version     = 2;  // 0 = latest
+    repeated string entity_ids       = 3;
+    bool            include_metadata = 4;
+    string          request_id       = 5;
+}
+
+message GetFeaturesResponse {
+    repeated FeatureVector vectors    = 1;
+    int64                  latency_us = 2;
+    repeated string        warnings   = 3;
+}
+
+// -----------------------------------------------
+// Write requests
+// -----------------------------------------------
+
+message PutFeatureVectorRequest {
+    FeatureVector vector = 1;
+}
+
+message PutFeatureVectorResponse {
+    bool   success = 1;
+    string message = 2;
+}
+
+message PutScalarFeaturesRequest {
+    string           entity_type = 1;
+    string           entity_id   = 2;
+    repeated Feature features    = 3;
+}
+
+message PutScalarFeaturesResponse {
+    bool   success       = 1;
+    int32  features_written = 2;
+    string message        = 3;
+}
+
+message PutFeatureVectorBatchRequest {
+    repeated FeatureVector vectors = 1;
+}
+
+message PutFeatureVectorBatchResponse {
+    bool   success        = 1;
+    int32  vectors_written = 2;
+    string message         = 3;
+}
+
+// -----------------------------------------------
+// Schema
+// -----------------------------------------------
+
+message ViewSchema {
+    string          view_name      = 1;
+    int32           version        = 2;
+    repeated string feature_names  = 3;  // ordered, positional
+    repeated string feature_dtypes = 4;
+    int32           schema_hash    = 5;  // CRC32 of ordered feature names
+    int64           created_at_ms  = 6;
+}
+
+message GetViewSchemaRequest {
+    string view_name = 1;
+    int32  version   = 2;  // 0 = latest
+}
+
+message GetViewSchemaResponse {
+    ViewSchema schema = 1;
+}
+
+// -----------------------------------------------
+// Registry messages for entity/feature/view management
+// -----------------------------------------------
+
+message EntityDefinitionProto {
+    string id          = 1;
+    string name        = 2;
+    string description = 3;
+    string join_key    = 4;
+    string join_key_type = 5;
+}
+
+message FeatureDefinitionProto {
+    string id               = 1;
+    string name             = 2;
+    string entity_id        = 3;
+    string dtype            = 4;
+    string description      = 5;
+    string owner            = 6;
+    string update_frequency = 7;
+    int32  max_age_seconds  = 8;
+    string status           = 9;
+    int32  version          = 10;
+}
+
+message FeatureViewProto {
+    string          id           = 1;
+    string          name         = 2;
+    int32           version      = 3;
+    string          entity_id    = 4;
+    string          description  = 5;
+    string          model_name   = 6;
+    repeated string feature_names = 7;
+    int32           schema_hash  = 8;
+    string          status       = 9;
+}
+
+// -----------------------------------------------
+// Service definitions
+// -----------------------------------------------
+
+service FeatureStoreService {
+    // Online serving
+    rpc GetOnlineFeatures(GetFeaturesRequest) returns (GetFeaturesResponse);
+
+    // Write path
+    rpc PutFeatureVector(PutFeatureVectorRequest) returns (PutFeatureVectorResponse);
+    rpc PutFeatureVectorBatch(PutFeatureVectorBatchRequest) returns (PutFeatureVectorBatchResponse);
+    rpc PutScalarFeatures(PutScalarFeaturesRequest) returns (PutScalarFeaturesResponse);
+
+    // Schema
+    rpc GetViewSchema(GetViewSchemaRequest) returns (GetViewSchemaResponse);
+}

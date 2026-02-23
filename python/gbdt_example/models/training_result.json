@@ -1,0 +1,84 @@
+{
+  "model_name": "xgboost_fraud_gbdt",
+  "auc_roc": 0.9972826086956521,
+  "auc_pr": 0.9748816287878788,
+  "score_std": 0.2821929156780243,
+  "cv_auc_mean": 0.9890360926075212,
+  "cv_auc_std": 0.006937612523207274,
+  "feature_importance": {
+    "fraud_reports_30d": 0.3128564655780792,
+    "account_age_days": 0.18293246626853943,
+    "dispute_count_90d": 0.07353368401527405,
+    "avg_txn_value": 0.06020205095410347,
+    "active_days_30d": 0.0454290471971035,
+    "chargeback_rate_90d": 0.04488052427768707,
+    "country_risk_score": 0.03920390084385872,
+    "gmv_velocity_pct": 0.03825428709387779,
+    "days_since_last_payout": 0.03659258410334587,
+    "txn_velocity_pct": 0.0358741357922554,
+    "gmv_90d": 0.0353047139942646,
+    "gmv_30d": 0.0344654880464077,
+    "refund_rate_30d": 0.026726065203547478,
+    "txn_count_30d": 0.018744170665740967,
+    "mcc_risk_score": 0.01500057615339756
+  },
+  "hyperparams": {
+    "n_estimators": 500,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "min_child_weight": 5,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "gamma": 0.1,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "eval_metric": "aucpr",
+    "tree_method": "hist",
+    "device": "cpu",
+    "random_state": 42,
+    "scale_pos_weight": 11.5
+  },
+  "train_size": 800,
+  "test_size": 200,
+  "positive_rate": 0.08,
+  "training_time_sec": 3.9044811725616455,
+  "gates_passed": true,
+  "gate_details": [
+    {
+      "gate": "AUC-ROC",
+      "passed": true,
+      "value": 0.9972826086956521,
+      "threshold": 0.75
+    },
+    {
+      "gate": "AUC-PR",
+      "passed": true,
+      "value": 0.9748816287878788,
+      "threshold": 0.4
+    },
+    {
+      "gate": "Score Std",
+      "passed": true,
+      "value": 0.2821929156780243,
+      "threshold": 0.05
+    }
+  ],
+  "model_path": "models/model.ubj",
+  "feature_names": [
+    "gmv_30d",
+    "gmv_90d",
+    "txn_count_30d",
+    "avg_txn_value",
+    "active_days_30d",
+    "chargeback_rate_90d",
+    "refund_rate_30d",
+    "dispute_count_90d",
+    "fraud_reports_30d",
+    "account_age_days",
+    "days_since_last_payout",
+    "gmv_velocity_pct",
+    "txn_velocity_pct",
+    "mcc_risk_score",
+    "country_risk_score"
+  ]
+}

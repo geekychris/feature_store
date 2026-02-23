@@ -1,0 +1,24 @@
+{
+  "id": "gbdt",
+  "name": "Merchant Fraud Risk (GBDT)",
+  "description": "Binary classification — 15 features, ~8% positive rate. XGBoost GBDT classifier.",
+  "train_script": "python/gbdt_example/run_gbdt_example.py",
+  "import_id": "gbdt",
+  "models_dir": "python/gbdt_example/models",
+  "infer_script": "python/dataset_tool.py",
+  "infer_type": "classification",
+  "params": [
+    {
+      "name": "n_merchants",
+      "label": "Number of Merchants",
+      "type": "integer",
+      "default": 1000,
+      "min": 100,
+      "max": 100000,
+      "step": 100,
+      "cli_arg": "--n-merchants"
+    }
+  ],
+  "metrics": ["auc_roc", "auc_pr", "accuracy", "f1_score"],
+  "primary_metric": "auc_roc"
+}
