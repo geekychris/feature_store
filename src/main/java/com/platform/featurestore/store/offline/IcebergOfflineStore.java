@@ -84,6 +84,7 @@ public class IcebergOfflineStore {
                 .schema(FEATURE_RECORD_SCHEMA)
                 .createWriterFunc(GenericParquetWriter::buildWriter)
                 .overwrite()
+                .withSpec(PartitionSpec.unpartitioned())
                 .build();
 
         try {
