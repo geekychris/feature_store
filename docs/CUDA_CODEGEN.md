@@ -714,6 +714,38 @@ make bench_cuda BENCH_ARGS="-n 10000000 -k 100 -i 50"
 - `-w <warmup>` — Warmup iterations before timing (default: 2 CPU, 5 CUDA)
 - `-s <seed>` — RNG seed for reproducible random data (default: 42)
 
+**Example: Scoring 2M ads on CPU**
+
+```bash
+../build/scoring_split_bench_cpu -n 2000000 -k 100 -w 5 -i 10
+```
+
+```
+=== CPU Split-Feature Scoring Benchmark ===
+  Items:         2000000
+  Top-K:         100
+  Trees:         300
+  Warmup:        5
+  Iterations:    10
+
+Generated 198.4 MB of random item features
+
+--- Results ---
+  Full scoring:          594.68 ms  ( 3363.15 K items/sec)
+  Score + top-100 :      599.13 ms  ( 3338.17 K items/sec)
+  Top-K overhead:          4.45 ms  (0.7% of scoring)
+
+--- Top-K Scaling (score + qsort) ---
+  K=10         598.75 ms  ( 3340.27 K items/sec)
+  K=50         598.45 ms  ( 3341.98 K items/sec)
+  K=100        590.47 ms  ( 3387.16 K items/sec)
+  K=500        602.98 ms  ( 3316.84 K items/sec)
+  K=1000       596.36 ms  ( 3353.70 K items/sec)
+```
+
+Single-core CPU throughput: ~3.4M items/sec (300 trees, depth 6). Top-K
+selection via qsort adds <1% overhead regardless of K.
+
 **Benchmark output includes:**
 
 - Full scoring throughput (K items/sec for CPU, M items/sec for CUDA)
