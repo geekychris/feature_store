@@ -21,23 +21,62 @@ def cmd_generate(args):
         metadata_path=args.metadata,
     )
 
-    if args.cpu:
-        path = gen.generate_cpu(args.output)
-    else:
-        path = gen.generate_cuda(args.output)
+    user_fc = getattr(args, "user_features", None)
+    library = getattr(args, "library", False)
 
-    print(f"Generated: {path}")
-    print(f"  Trees:      {gen.model_info.num_trees}")
-    print(f"  Features:   {gen.model_info.num_features}")
+    if library and user_fc:
+        # Library mode: separate core + drivers + benchmark + Makefile
+        files = gen.generate_split_library(args.output, user_fc)
+        item_fc = gen.model_info.num_features - user_fc
+        print(f"Generated split-feature library in: {args.output}")
+        print(f"  Trees:          {gen.model_info.num_trees}")
+        print(f"  User features:  {user_fc}  "
+              f"[{', '.join(gen.model_info.feature_names[:user_fc])}]")
+        print(f"  Item features:  {item_fc}  "
+              f"[{', '.join(gen.model_info.feature_names[user_fc:user_fc+8])}"
+              + (", ..." if item_fc > 8 else "") + "]")
+        print(f"  Files:")
+        for role, path in sorted(files.items()):
+            print(f"    {role:12s}  {path}")
+        print(f"\n  Build:  cd {args.output} && make cpu")
+        print(f"  Bench:  cd {args.output} && make bench_cpu")
+    elif user_fc:
+        # Split-feature mode (single file)
+        if args.cpu:
+            path = gen.generate_cpu_split(args.output, user_fc)
+        else:
+            path = gen.generate_cuda_split(args.output, user_fc)
+        item_fc = gen.model_info.num_features - user_fc
+        print(f"Generated (split-feature): {path}")
+        print(f"  Trees:          {gen.model_info.num_trees}")
+        print(f"  User features:  {user_fc}  "
+              f"[{', '.join(gen.model_info.feature_names[:user_fc])}]")
+        print(f"  Item features:  {item_fc}  "
+              f"[{', '.join(gen.model_info.feature_names[user_fc:user_fc+8])}"
+              + (", ..." if item_fc > 8 else "") + "]")
+    else:
+        # Standard mode
+        if args.cpu:
+            path = gen.generate_cpu(args.output)
+        else:
+            path = gen.generate_cuda(args.output)
+        print(f"Generated: {path}")
+        print(f"  Trees:      {gen.model_info.num_trees}")
+        print(f"  Features:   {gen.model_info.num_features}")
+
     print(f"  Objective:  {gen.model_info.objective}")
     print(f"  Base score: {gen.model_info.base_score:.8f}")
-    print(f"  Feature names: {', '.join(gen.model_info.feature_names[:8])}"
-          + (", ..." if len(gen.model_info.feature_names) > 8 else ""))
 
 
 def cmd_verify(args):
     """Verify generated code matches XGBoost Python predictions."""
+    user_fc = getattr(args, "user_features", None)
+    topk = getattr(args, "topk", None)
     print(f"Verifying model: {args.model}")
+    if user_fc:
+        print(f"  Mode:        split-feature (user={user_fc})")
+    if topk:
+        print(f"  Top-K:       {topk}")
     print(f"  Samples:     {args.n_samples}")
     print(f"  NaN fraction: {args.nan_fraction:.0%}")
     print(f"  Tolerance:   {args.tolerance:.0e}")
@@ -49,6 +88,8 @@ def cmd_verify(args):
         metadata_path=args.metadata,
         tolerance=args.tolerance,
         nan_fraction=args.nan_fraction,
+        user_feature_count=user_fc,
+        topk=topk,
     )
 
     if result["success"]:
@@ -66,6 +107,9 @@ def cmd_verify(args):
               f"{result['expected_range'][1]:.6f}]")
         print(f"  Actual range:    [{result['actual_range'][0]:.6f}, "
               f"{result['actual_range'][1]:.6f}]")
+
+    if "index_agreement" in result:
+        print(f"  Index agreement: {result['index_agreement']:.1%}")
 
     if "worst_samples" in result and not result["success"]:
         print("\n  Worst mismatches:")
@@ -106,6 +150,17 @@ def main():
         "--cpu", action="store_true",
         help="Generate CPU-only C code instead of CUDA",
     )
+    gen_p.add_argument(
+        "--user-features", type=int, default=None,
+        help="Split-feature mode: number of user features (0..N-1). "
+             "Remaining features are item features kept resident on GPU.",
+    )
+    gen_p.add_argument(
+        "--library", action="store_true",
+        help="Generate as a library: separate core header, main driver, "
+             "benchmark driver, and Makefile. --output is a directory. "
+             "Requires --user-features.",
+    )
     gen_p.set_defaults(func=cmd_generate)
 
     # --- verify ---
@@ -132,6 +187,14 @@ def main():
     ver_p.add_argument(
         "--nan-fraction", type=float, default=0.05,
         help="Fraction of feature values to set to NaN (default: 0.05)",
+    )
+    ver_p.add_argument(
+        "--user-features", type=int, default=None,
+        help="Split-feature mode: number of user features (0..N-1)",
+    )
+    ver_p.add_argument(
+        "--topk", type=int, default=None,
+        help="Verify top-K ranking mode (requires --user-features)",
     )
     ver_p.set_defaults(func=cmd_verify)
 
