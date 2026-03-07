@@ -69,6 +69,16 @@ _CPU_TRANSFORMS = {
     "rank:ndcg":        "1.0f / (1.0f + expf(-raw))",
 }
 
+# Metal Shading Language uses exp() not expf() (overloaded for float in <metal_stdlib>)
+_METAL_TRANSFORMS = {
+    "binary:logistic":  "1.0f / (1.0f + exp(-raw))",
+    "binary:logitraw":  "raw",
+    "reg:squarederror": "raw",
+    "reg:linear":       "raw",
+    "rank:pairwise":    "1.0f / (1.0f + exp(-raw))",
+    "rank:ndcg":        "1.0f / (1.0f + exp(-raw))",
+}
+
 
 class CudaCodeGenerator:
     """
@@ -1296,304 +1306,448 @@ void score_user_cpu(
         main_fn = self._emit_split_main(cuda)
         return f'#include "{inc}"\n{main_fn}'
 
+    def _compute_feature_ranges(self) -> list[tuple[float, float]]:
+        """Extract per-feature value ranges from tree split thresholds.
+
+        Walks all trees to find min/max split thresholds per feature,
+        then adds margin so random benchmark data covers realistic ranges.
+        """
+        n = self.model_info.num_features
+        feat_min = [float('inf')] * n
+        feat_max = [float('-inf')] * n
+
+        def _walk(node):
+            if "leaf" in node:
+                return
+            split_name = node["split"]
+            fid = int(split_name[1:] if split_name.startswith("f") else split_name)
+            thr = float(node["split_condition"])
+            feat_min[fid] = min(feat_min[fid], thr)
+            feat_max[fid] = max(feat_max[fid], thr)
+            for child in node.get("children", []):
+                _walk(child)
+
+        for tree in self.trees:
+            _walk(tree)
+
+        # Add 20% margin; floor at 0 for features with all-positive thresholds
+        ranges = []
+        for i in range(n):
+            lo, hi = feat_min[i], feat_max[i]
+            if lo == float('inf'):  # feature never split on
+                lo, hi = 0.0, 1.0
+            span = max(hi - lo, 1.0)
+            lo_out = max(0.0, lo - 0.2 * span) if lo >= 0 else lo - 0.2 * span
+            hi_out = hi + 0.2 * span
+            ranges.append((lo_out, hi_out))
+        return ranges
+
+    def _emit_feature_range_arrays(self) -> str:
+        """Emit C arrays of per-feature min/max for realistic random data."""
+        ranges = self._compute_feature_ranges()
+        n = len(ranges)
+        lines = []
+        lines.append(f"static const float FEAT_MIN[{n}] = {{")
+        for i in range(0, n, 8):
+            chunk = ranges[i:i+8]
+            vals = ", ".join(f"{lo:.2f}f" for lo, _ in chunk)
+            lines.append(f"    {vals},")
+        lines.append("};")
+        lines.append(f"static const float FEAT_MAX[{n}] = {{")
+        for i in range(0, n, 8):
+            chunk = ranges[i:i+8]
+            vals = ", ".join(f"{hi:.2f}f" for _, hi in chunk)
+            lines.append(f"    {vals},")
+        lines.append("};")
+        return "\n".join(lines)
+
     def _emit_split_bench_driver(self, cuda: bool) -> str:
         """Emit a benchmark driver for split-feature scoring."""
         if cuda:
             return self._emit_split_bench_driver_cuda()
         return self._emit_split_bench_driver_cpu()
 
-    @staticmethod
-    def _emit_split_bench_driver_cuda() -> str:
-        return """
-#include "scoring_split_core.cuh"
-#include <time.h>
+    def _emit_split_bench_driver_cuda(self) -> str:
+        feat_arrays = self._emit_feature_range_arrays()
+        lines = []
+        a = lines.append
+        a('#include "scoring_split_core.cuh"')
+        a('#include <time.h>')
+        a('')
+        a(feat_arrays)
+        a('')
+        a('static double get_time_ms(void) {')
+        a('    struct timespec ts;')
+        a('    clock_gettime(CLOCK_MONOTONIC, &ts);')
+        a('    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;')
+        a('}')
+        a('')
+        a('/* RNG: uniform in [lo, hi] */')
+        a('static float randf_range(unsigned int *state, float lo, float hi) {')
+        a('    *state = *state * 1103515245u + 12345u;')
+        a('    float t = (float)(*state >> 16) / 65535.0f;')
+        a('    return lo + t * (hi - lo);')
+        a('}')
+        a('')
+        a('int main(int argc, char** argv) {')
+        a('    int n_items    = 1000000;')
+        a('    int topk       = 100;')
+        a('    int warmup     = 5;')
+        a('    int iterations = 20;')
+        a('    unsigned int seed = 42;')
+        a('')
+        a('    for (int i = 1; i < argc; i++) {')
+        a('        if      (strcmp(argv[i], "-n") == 0 && i+1 < argc) n_items    = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-k") == 0 && i+1 < argc) topk       = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-w") == 0 && i+1 < argc) warmup     = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-i") == 0 && i+1 < argc) iterations = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-s") == 0 && i+1 < argc) seed       = (unsigned)atoi(argv[++i]);')
+        a('        else {')
+        a('            fprintf(stderr,')
+        a('                "Usage: %s [-n items] [-k topK] [-w warmup] [-i iters] [-s seed]\\n"')
+        a('                "\\n  Defaults: -n 1000000 -k 100 -w 5 -i 20 -s 42\\n", argv[0]);')
+        a('            return (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) ? 0 : 1;')
+        a('        }')
+        a('    }')
+        a('')
+        a('    /* GPU info */')
+        a('    cudaDeviceProp prop;')
+        a('    cudaGetDeviceProperties(&prop, 0);')
+        a('')
+        a('    printf("=== CUDA Split-Feature Scoring Benchmark ===\\n");')
+        a('    printf("  GPU:           %s\\n", prop.name);')
+        a('    printf("  SMs:           %d\\n", prop.multiProcessorCount);')
+        a('    printf("  Items:         %d\\n", n_items);')
+        a('    printf("  Top-K:         %d\\n", topk);')
+        a('    printf("  User features: %d\\n", NUM_USER_FEATURES);')
+        a('    printf("  Item features: %d\\n", NUM_ITEM_FEATURES);')
+        a('    printf("  Trees:         %d\\n", NUM_TREES);')
+        a('    printf("  Warmup:        %d\\n", warmup);')
+        a('    printf("  Iterations:    %d\\n", iterations);')
+        a('    printf("  Seed:          %u\\n\\n", seed);')
+        a('')
+        a('    /* Generate random data in realistic feature ranges */')
+        a('    unsigned int rng = seed;')
+        a('    float user[NUM_USER_FEATURES];')
+        a('    for (int i = 0; i < NUM_USER_FEATURES; i++)')
+        a('        user[i] = randf_range(&rng, FEAT_MIN[i], FEAT_MAX[i]);')
+        a('')
+        a('    size_t items_bytes = (size_t)n_items * NUM_ITEM_FEATURES * sizeof(float);')
+        a('    float* items = (float*)malloc(items_bytes);')
+        a('    if (!items) { perror("malloc items"); return 1; }')
+        a('    for (int j = 0; j < n_items; j++)')
+        a('        for (int f = 0; f < NUM_ITEM_FEATURES; f++)')
+        a('            items[j * NUM_ITEM_FEATURES + f] = randf_range(&rng, FEAT_MIN[NUM_USER_FEATURES + f], FEAT_MAX[NUM_USER_FEATURES + f]);')
+        a('    printf("Generated %.1f MB of random item features\\n", items_bytes / (1024.0 * 1024.0));')
+        a('')
+        a('    /* Create context + load items */')
+        a('    double t0 = get_time_ms();')
+        a('    ScoringContext* ctx = scoring_context_create(n_items);')
+        a('    if (!ctx) { fprintf(stderr, "Failed to create context\\n"); return 1; }')
+        a('    if (load_items(ctx, items, n_items) != 0) return 1;')
+        a('    double load_ms = get_time_ms() - t0;')
+        a('    printf("Item load (H->D): %10.2f ms  (%.1f GB/s)\\n\\n", load_ms, items_bytes / load_ms / 1e6);')
+        a('')
+        a('    /* Allocate output buffers */')
+        a('    float* scores = (float*)malloc((size_t)n_items * sizeof(float));')
+        a('    int*   topk_idx = (int*)malloc(topk * sizeof(int));')
+        a('    float* topk_sc  = (float*)malloc(topk * sizeof(float));')
+        a('    if (!scores || !topk_idx || !topk_sc) { perror("malloc"); return 1; }')
+        a('')
+        a('    /* ---- Warmup ---- */')
+        a('    printf("Warming up (%d runs)...\\n", warmup);')
+        a('    for (int w = 0; w < warmup; w++) {')
+        a('        score_user(ctx, user, scores);')
+        a('        score_user_topk(ctx, user, topk, topk_idx, topk_sc);')
+        a('    }')
+        a('')
+        a('    /* ---- Score verification ---- */')
+        a('    score_user(ctx, user, scores);')
+        a('    float s_min = scores[0], s_max = scores[0];')
+        a('    double s_sum = 0.0;')
+        a('    int unique_count = 0;')
+        a('    for (int i = 0; i < n_items; i++) {')
+        a('        if (scores[i] < s_min) s_min = scores[i];')
+        a('        if (scores[i] > s_max) s_max = scores[i];')
+        a('        s_sum += scores[i];')
+        a('    }')
+        a('    /* Count unique scores (sample first 100K) */')
+        a('    {')
+        a('        int check_n = n_items < 100000 ? n_items : 100000;')
+        a('        float* sample = (float*)malloc(check_n * sizeof(float));')
+        a('        for (int i = 0; i < check_n; i++) sample[i] = scores[i * ((n_items + check_n - 1) / check_n)];')
+        a('        /* simple unique count via sort */')
+        a('        for (int i = 0; i < check_n - 1; i++)')
+        a('            for (int j = i + 1; j < check_n && j < i + 50; j++)')
+        a('                if (sample[j] < sample[i]) { float t = sample[i]; sample[i] = sample[j]; sample[j] = t; }')
+        a('        unique_count = 1;')
+        a('        for (int i = 1; i < check_n; i++)')
+        a('            if (sample[i] != sample[i-1]) unique_count++;')
+        a('        free(sample);')
+        a('    }')
+        a('    printf("--- Score Verification ---\\n");')
+        a('    printf("  Min score:     %.8f\\n", s_min);')
+        a('    printf("  Max score:     %.8f\\n", s_max);')
+        a('    printf("  Mean score:    %.8f\\n", s_sum / n_items);')
+        a('    printf("  Unique scores: %d (sampled)\\n", unique_count);')
+        a('    printf("  Score[0]:      %.8f\\n", scores[0]);')
+        a('    printf("  Score[N/4]:    %.8f\\n", scores[n_items/4]);')
+        a('    printf("  Score[N/2]:    %.8f\\n", scores[n_items/2]);')
+        a('    printf("  Score[3N/4]:   %.8f\\n", scores[3*n_items/4]);')
+        a('    printf("  Score[N-1]:    %.8f\\n\\n", scores[n_items-1]);')
+        a('')
+        a('    /* ---- Benchmark: full scoring ---- */')
+        a('    t0 = get_time_ms();')
+        a('    for (int it = 0; it < iterations; it++)')
+        a('        score_user(ctx, user, scores);')
+        a('    double full_ms = (get_time_ms() - t0) / iterations;')
+        a('')
+        a('    /* ---- Benchmark: top-K ---- */')
+        a('    t0 = get_time_ms();')
+        a('    for (int it = 0; it < iterations; it++)')
+        a('        score_user_topk(ctx, user, topk, topk_idx, topk_sc);')
+        a('    double topk_ms = (get_time_ms() - t0) / iterations;')
+        a('')
+        a('    /* ---- Results ---- */')
+        a('    printf("\\n--- Results ---\\n");')
+        a('    printf("  score_user():      %10.2f ms  (%8.2f M items/sec)\\n",')
+        a('           full_ms, n_items / full_ms / 1000.0);')
+        a('    printf("  score_user_topk(): %10.2f ms  (%8.2f M items/sec)\\n",')
+        a('           topk_ms, n_items / topk_ms / 1000.0);')
+        a('    printf("  D->H transfer:     %.1f MB (full) vs %.1f MB (topk blocks)\\n",')
+        a('           n_items * 4.0 / (1024*1024),')
+        a('           (double)((n_items + TOPK_BLOCK_SIZE - 1) / TOPK_BLOCK_SIZE) * topk * 8.0 / (1024*1024));')
+        a('')
+        a('    /* ---- Top-K scaling ---- */')
+        a('    int k_values[] = {10, 50, 100, 500, 1000};')
+        a('    int n_kv = 5;')
+        a('    printf("\\n--- Top-K Scaling ---\\n");')
+        a('    for (int ki = 0; ki < n_kv; ki++) {')
+        a('        int k = k_values[ki];')
+        a('        if (k > n_items || k > 1024) break;')
+        a('        int*   ki_idx = (int*)malloc(k * sizeof(int));')
+        a('        float* ki_sc  = (float*)malloc(k * sizeof(float));')
+        a('        score_user_topk(ctx, user, k, ki_idx, ki_sc);  /* warmup */')
+        a('        t0 = get_time_ms();')
+        a('        for (int it = 0; it < iterations; it++)')
+        a('            score_user_topk(ctx, user, k, ki_idx, ki_sc);')
+        a('        double k_ms = (get_time_ms() - t0) / iterations;')
+        a('        printf("  K=%-5d  %10.2f ms  (%8.2f M items/sec)\\n",')
+        a('               k, k_ms, n_items / k_ms / 1000.0);')
+        a('        free(ki_idx); free(ki_sc);')
+        a('    }')
+        a('')
+        a('    /* ---- Top-K preview ---- */')
+        a('    printf("\\nTop-%d preview:\\n", topk < 10 ? topk : 10);')
+        a('    int show = topk < 10 ? topk : 10;')
+        a('    for (int i = 0; i < show; i++)')
+        a('        printf("  rank[%d] = item[%d]  score=%.8f\\n", i, topk_idx[i], topk_sc[i]);')
+        a('    if (topk > 10) printf("  ... (%d more)\\n", topk - 10);')
+        a('')
+        a('    scoring_context_destroy(ctx);')
+        a('    free(items); free(scores);')
+        a('    free(topk_idx); free(topk_sc);')
+        a('    printf("\\nDone.\\n");')
+        a('    return 0;')
+        a('}')
+        return "\n".join(lines)
 
-static double get_time_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
-}
-
-static float randf(unsigned int *state) {
-    *state = *state * 1103515245u + 12345u;
-    return ((float)(*state >> 16) / 32768.0f) - 1.0f;
-}
-
-int main(int argc, char** argv) {
-    int n_items    = 1000000;
-    int topk       = 100;
-    int warmup     = 5;
-    int iterations = 20;
-    unsigned int seed = 42;
-
-    for (int i = 1; i < argc; i++) {
-        if      (strcmp(argv[i], "-n") == 0 && i+1 < argc) n_items    = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-k") == 0 && i+1 < argc) topk       = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-w") == 0 && i+1 < argc) warmup     = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-i") == 0 && i+1 < argc) iterations = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-s") == 0 && i+1 < argc) seed       = (unsigned)atoi(argv[++i]);
-        else {
-            fprintf(stderr,
-                "Usage: %s [-n items] [-k topK] [-w warmup] [-i iters] [-s seed]\\n"
-                "\\n  Defaults: -n 1000000 -k 100 -w 5 -i 20 -s 42\\n", argv[0]);
-            return (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) ? 0 : 1;
-        }
-    }
-
-    /* GPU info */
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0);
-
-    printf("=== CUDA Split-Feature Scoring Benchmark ===\\n");
-    printf("  GPU:           %s\\n", prop.name);
-    printf("  SMs:           %d\\n", prop.multiProcessorCount);
-    printf("  Items:         %d\\n", n_items);
-    printf("  Top-K:         %d\\n", topk);
-    printf("  User features: %d\\n", NUM_USER_FEATURES);
-    printf("  Item features: %d\\n", NUM_ITEM_FEATURES);
-    printf("  Trees:         %d\\n", NUM_TREES);
-    printf("  Warmup:        %d\\n", warmup);
-    printf("  Iterations:    %d\\n", iterations);
-    printf("  Seed:          %u\\n\\n", seed);
-
-    /* Generate random data */
-    unsigned int rng = seed;
-    float user[NUM_USER_FEATURES];
-    for (int i = 0; i < NUM_USER_FEATURES; i++) user[i] = randf(&rng);
-
-    size_t items_bytes = (size_t)n_items * NUM_ITEM_FEATURES * sizeof(float);
-    float* items = (float*)malloc(items_bytes);
-    if (!items) { perror("malloc items"); return 1; }
-    for (size_t i = 0; i < (size_t)n_items * NUM_ITEM_FEATURES; i++)
-        items[i] = randf(&rng);
-    printf("Generated %.1f MB of random item features\\n", items_bytes / (1024.0 * 1024.0));
-
-    /* Create context + load items */
-    double t0 = get_time_ms();
-    ScoringContext* ctx = scoring_context_create(n_items);
-    if (!ctx) { fprintf(stderr, "Failed to create context\\n"); return 1; }
-    if (load_items(ctx, items, n_items) != 0) return 1;
-    double load_ms = get_time_ms() - t0;
-    printf("Item load (H->D): %10.2f ms  (%.1f GB/s)\\n\\n", load_ms, items_bytes / load_ms / 1e6);
-
-    /* Allocate output buffers */
-    float* scores = (float*)malloc((size_t)n_items * sizeof(float));
-    int*   topk_idx = (int*)malloc(topk * sizeof(int));
-    float* topk_sc  = (float*)malloc(topk * sizeof(float));
-    if (!scores || !topk_idx || !topk_sc) { perror("malloc"); return 1; }
-
-    /* ---- Warmup ---- */
-    printf("Warming up (%d runs)...\\n", warmup);
-    for (int w = 0; w < warmup; w++) {
-        score_user(ctx, user, scores);
-        score_user_topk(ctx, user, topk, topk_idx, topk_sc);
-    }
-
-    /* ---- Benchmark: full scoring ---- */
-    t0 = get_time_ms();
-    for (int it = 0; it < iterations; it++)
-        score_user(ctx, user, scores);
-    double full_ms = (get_time_ms() - t0) / iterations;
-
-    /* ---- Benchmark: top-K ---- */
-    t0 = get_time_ms();
-    for (int it = 0; it < iterations; it++)
-        score_user_topk(ctx, user, topk, topk_idx, topk_sc);
-    double topk_ms = (get_time_ms() - t0) / iterations;
-
-    /* ---- Results ---- */
-    printf("\\n--- Results ---\\n");
-    printf("  score_user():      %10.2f ms  (%8.2f M items/sec)\\n",
-           full_ms, n_items / full_ms / 1000.0);
-    printf("  score_user_topk(): %10.2f ms  (%8.2f M items/sec)\\n",
-           topk_ms, n_items / topk_ms / 1000.0);
-    printf("  D->H transfer:     %.1f MB (full) vs %.1f MB (topk blocks)\\n",
-           n_items * 4.0 / (1024*1024),
-           (double)((n_items + TOPK_BLOCK_SIZE - 1) / TOPK_BLOCK_SIZE) * topk * 8.0 / (1024*1024));
-
-    /* ---- Top-K scaling ---- */
-    int k_values[] = {10, 50, 100, 500, 1000};
-    int n_kv = 5;
-    printf("\\n--- Top-K Scaling ---\\n");
-    for (int ki = 0; ki < n_kv; ki++) {
-        int k = k_values[ki];
-        if (k > n_items || k > 1024) break;
-        int*   ki_idx = (int*)malloc(k * sizeof(int));
-        float* ki_sc  = (float*)malloc(k * sizeof(float));
-        score_user_topk(ctx, user, k, ki_idx, ki_sc);  /* warmup */
-        t0 = get_time_ms();
-        for (int it = 0; it < iterations; it++)
-            score_user_topk(ctx, user, k, ki_idx, ki_sc);
-        double k_ms = (get_time_ms() - t0) / iterations;
-        printf("  K=%-5d  %10.2f ms  (%8.2f M items/sec)\\n",
-               k, k_ms, n_items / k_ms / 1000.0);
-        free(ki_idx); free(ki_sc);
-    }
-
-    /* ---- Top-K preview ---- */
-    printf("\\nTop-%d preview:\\n", topk < 10 ? topk : 10);
-    int show = topk < 10 ? topk : 10;
-    for (int i = 0; i < show; i++)
-        printf("  rank[%d] = item[%d]  score=%.8f\\n", i, topk_idx[i], topk_sc[i]);
-    if (topk > 10) printf("  ... (%d more)\\n", topk - 10);
-
-    scoring_context_destroy(ctx);
-    free(items); free(scores);
-    free(topk_idx); free(topk_sc);
-    printf("\\nDone.\\n");
-    return 0;
-}
-"""
-
-    @staticmethod
-    def _emit_split_bench_driver_cpu() -> str:
-        return """
-#include "scoring_split_core.h"
-#include <time.h>
-
-static double get_time_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
-}
-
-static float randf(unsigned int *state) {
-    *state = *state * 1103515245u + 12345u;
-    return ((float)(*state >> 16) / 32768.0f) - 1.0f;
-}
-
-int main(int argc, char** argv) {
-    int n_items    = 100000;
-    int topk       = 100;
-    int warmup     = 2;
-    int iterations = 5;
-    unsigned int seed = 42;
-
-    for (int i = 1; i < argc; i++) {
-        if      (strcmp(argv[i], "-n") == 0 && i+1 < argc) n_items    = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-k") == 0 && i+1 < argc) topk       = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-w") == 0 && i+1 < argc) warmup     = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-i") == 0 && i+1 < argc) iterations = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-s") == 0 && i+1 < argc) seed       = (unsigned)atoi(argv[++i]);
-        else {
-            fprintf(stderr,
-                "Usage: %s [-n items] [-k topK] [-w warmup] [-i iters] [-s seed]\\n"
-                "\\n  Defaults: -n 100000 -k 100 -w 2 -i 5 -s 42\\n", argv[0]);
-            return (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) ? 0 : 1;
-        }
-    }
-
-    printf("=== CPU Split-Feature Scoring Benchmark ===\\n");
-    printf("  Items:         %d\\n", n_items);
-    printf("  Top-K:         %d\\n", topk);
-    printf("  User features: %d\\n", NUM_USER_FEATURES);
-    printf("  Item features: %d\\n", NUM_ITEM_FEATURES);
-    printf("  Trees:         %d\\n", NUM_TREES);
-    printf("  Warmup:        %d\\n", warmup);
-    printf("  Iterations:    %d\\n", iterations);
-    printf("  Seed:          %u\\n\\n", seed);
-
-    /* Generate random data */
-    unsigned int rng = seed;
-    float user[NUM_USER_FEATURES];
-    for (int i = 0; i < NUM_USER_FEATURES; i++) user[i] = randf(&rng);
-
-    size_t items_bytes = (size_t)n_items * NUM_ITEM_FEATURES * sizeof(float);
-    float* items = (float*)malloc(items_bytes);
-    if (!items) { perror("malloc items"); return 1; }
-    for (size_t i = 0; i < (size_t)n_items * NUM_ITEM_FEATURES; i++)
-        items[i] = randf(&rng);
-    printf("Generated %.1f MB of random item features\\n", items_bytes / (1024.0 * 1024.0));
-
-    float* scores = (float*)malloc((size_t)n_items * sizeof(float));
-    if (!scores) { perror("malloc scores"); return 1; }
-
-    /* ---- Warmup ---- */
-    printf("Warming up (%d runs)...\\n", warmup);
-    for (int w = 0; w < warmup; w++)
-        score_user_cpu(user, items, scores, n_items);
-
-    /* ---- Benchmark: full scoring ---- */
-    double t0 = get_time_ms();
-    for (int it = 0; it < iterations; it++)
-        score_user_cpu(user, items, scores, n_items);
-    double full_ms = (get_time_ms() - t0) / iterations;
-
-    /* ---- Benchmark: score + top-K (qsort) ---- */
-    ScoredItem* ranked = (ScoredItem*)malloc(n_items * sizeof(ScoredItem));
-    int*   topk_idx = (int*)malloc(topk * sizeof(int));
-    float* topk_sc  = (float*)malloc(topk * sizeof(float));
-    if (!ranked || !topk_idx || !topk_sc) { perror("malloc"); return 1; }
-
-    t0 = get_time_ms();
-    for (int it = 0; it < iterations; it++) {
-        score_user_cpu(user, items, scores, n_items);
-        for (int i = 0; i < n_items; i++) {
-            ranked[i].score = scores[i];
-            ranked[i].index = i;
-        }
-        qsort(ranked, n_items, sizeof(ScoredItem), scored_item_cmp_desc);
-        int rk = topk < n_items ? topk : n_items;
-        for (int i = 0; i < rk; i++) {
-            topk_idx[i] = ranked[i].index;
-            topk_sc[i]  = ranked[i].score;
-        }
-    }
-    double topk_ms = (get_time_ms() - t0) / iterations;
-
-    /* ---- Results ---- */
-    printf("\\n--- Results ---\\n");
-    printf("  Full scoring:      %10.2f ms  (%8.2f K items/sec)\\n",
-           full_ms, n_items / full_ms);
-    printf("  Score + top-%-4d:  %10.2f ms  (%8.2f K items/sec)\\n",
-           topk, topk_ms, n_items / topk_ms);
-    printf("  Top-K overhead:    %10.2f ms  (%.1f%% of scoring)\\n",
-           topk_ms - full_ms,
-           full_ms > 0 ? (topk_ms - full_ms) / full_ms * 100.0 : 0.0);
-
-    /* ---- Top-K scaling ---- */
-    int k_values[] = {10, 50, 100, 500, 1000};
-    int n_kv = 5;
-    printf("\\n--- Top-K Scaling (score + qsort) ---\\n");
-    for (int ki = 0; ki < n_kv; ki++) {
-        int k = k_values[ki];
-        if (k > n_items) break;
-        int*   ki_idx = (int*)malloc(k * sizeof(int));
-        float* ki_sc  = (float*)malloc(k * sizeof(float));
-        if (!ki_idx || !ki_sc) continue;
-        t0 = get_time_ms();
-        for (int it = 0; it < iterations; it++) {
-            score_user_cpu(user, items, scores, n_items);
-            for (int j = 0; j < n_items; j++) {
-                ranked[j].score = scores[j];
-                ranked[j].index = j;
-            }
-            qsort(ranked, n_items, sizeof(ScoredItem), scored_item_cmp_desc);
-            int rk = k < n_items ? k : n_items;
-            for (int j = 0; j < rk; j++) {
-                ki_idx[j] = ranked[j].index;
-                ki_sc[j]  = ranked[j].score;
-            }
-        }
-        double k_ms = (get_time_ms() - t0) / iterations;
-        printf("  K=%-5d  %10.2f ms  (%8.2f K items/sec)\\n",
-               k, k_ms, n_items / k_ms);
-        free(ki_idx); free(ki_sc);
-    }
-
-    /* ---- Top-K preview ---- */
-    printf("\\nTop-%d preview:\\n", topk < 10 ? topk : 10);
-    int show = topk < 10 ? topk : 10;
-    for (int i = 0; i < show; i++)
-        printf("  rank[%d] = item[%d]  score=%.8f\\n", i, topk_idx[i], topk_sc[i]);
-    if (topk > 10) printf("  ... (%d more)\\n", topk - 10);
-
-    free(items); free(scores); free(ranked);
-    free(topk_idx); free(topk_sc);
-    printf("\\nDone.\\n");
-    return 0;
-}
-"""
+    def _emit_split_bench_driver_cpu(self) -> str:
+        feat_arrays = self._emit_feature_range_arrays()
+        lines = []
+        a = lines.append
+        a('#include "scoring_split_core.h"')
+        a('#include <time.h>')
+        a('')
+        a(feat_arrays)
+        a('')
+        a('static double get_time_ms(void) {')
+        a('    struct timespec ts;')
+        a('    clock_gettime(CLOCK_MONOTONIC, &ts);')
+        a('    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;')
+        a('}')
+        a('')
+        a('/* RNG: uniform in [lo, hi] */')
+        a('static float randf_range(unsigned int *state, float lo, float hi) {')
+        a('    *state = *state * 1103515245u + 12345u;')
+        a('    float t = (float)(*state >> 16) / 65535.0f;')
+        a('    return lo + t * (hi - lo);')
+        a('}')
+        a('')
+        a('int main(int argc, char** argv) {')
+        a('    int n_items    = 100000;')
+        a('    int topk       = 100;')
+        a('    int warmup     = 2;')
+        a('    int iterations = 5;')
+        a('    unsigned int seed = 42;')
+        a('')
+        a('    for (int i = 1; i < argc; i++) {')
+        a('        if      (strcmp(argv[i], "-n") == 0 && i+1 < argc) n_items    = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-k") == 0 && i+1 < argc) topk       = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-w") == 0 && i+1 < argc) warmup     = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-i") == 0 && i+1 < argc) iterations = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-s") == 0 && i+1 < argc) seed       = (unsigned)atoi(argv[++i]);')
+        a('        else {')
+        a('            fprintf(stderr,')
+        a('                "Usage: %s [-n items] [-k topK] [-w warmup] [-i iters] [-s seed]\\n"')
+        a('                "\\n  Defaults: -n 100000 -k 100 -w 2 -i 5 -s 42\\n", argv[0]);')
+        a('            return (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) ? 0 : 1;')
+        a('        }')
+        a('    }')
+        a('')
+        a('    printf("=== CPU Split-Feature Scoring Benchmark ===\\n");')
+        a('    printf("  Items:         %d\\n", n_items);')
+        a('    printf("  Top-K:         %d\\n", topk);')
+        a('    printf("  User features: %d\\n", NUM_USER_FEATURES);')
+        a('    printf("  Item features: %d\\n", NUM_ITEM_FEATURES);')
+        a('    printf("  Trees:         %d\\n", NUM_TREES);')
+        a('    printf("  Warmup:        %d\\n", warmup);')
+        a('    printf("  Iterations:    %d\\n", iterations);')
+        a('    printf("  Seed:          %u\\n\\n", seed);')
+        a('')
+        a('    /* Generate random data in realistic feature ranges */')
+        a('    unsigned int rng = seed;')
+        a('    float user[NUM_USER_FEATURES];')
+        a('    for (int i = 0; i < NUM_USER_FEATURES; i++)')
+        a('        user[i] = randf_range(&rng, FEAT_MIN[i], FEAT_MAX[i]);')
+        a('')
+        a('    size_t items_bytes = (size_t)n_items * NUM_ITEM_FEATURES * sizeof(float);')
+        a('    float* items = (float*)malloc(items_bytes);')
+        a('    if (!items) { perror("malloc items"); return 1; }')
+        a('    for (int j = 0; j < n_items; j++)')
+        a('        for (int f = 0; f < NUM_ITEM_FEATURES; f++)')
+        a('            items[j * NUM_ITEM_FEATURES + f] = randf_range(&rng, FEAT_MIN[NUM_USER_FEATURES + f], FEAT_MAX[NUM_USER_FEATURES + f]);')
+        a('    printf("Generated %.1f MB of random item features\\n", items_bytes / (1024.0 * 1024.0));')
+        a('')
+        a('    float* scores = (float*)malloc((size_t)n_items * sizeof(float));')
+        a('    if (!scores) { perror("malloc scores"); return 1; }')
+        a('')
+        a('    /* ---- Warmup ---- */')
+        a('    printf("Warming up (%d runs)...\\n", warmup);')
+        a('    for (int w = 0; w < warmup; w++)')
+        a('        score_user_cpu(user, items, scores, n_items);')
+        a('')
+        a('    /* ---- Score verification ---- */')
+        a('    score_user_cpu(user, items, scores, n_items);')
+        a('    float s_min = scores[0], s_max = scores[0];')
+        a('    double s_sum = 0.0;')
+        a('    int unique_count = 0;')
+        a('    for (int i = 0; i < n_items; i++) {')
+        a('        if (scores[i] < s_min) s_min = scores[i];')
+        a('        if (scores[i] > s_max) s_max = scores[i];')
+        a('        s_sum += scores[i];')
+        a('    }')
+        a('    /* Count unique scores (sample first 100K) */')
+        a('    {')
+        a('        int check_n = n_items < 100000 ? n_items : 100000;')
+        a('        float* sample = (float*)malloc(check_n * sizeof(float));')
+        a('        int stride = (n_items + check_n - 1) / check_n;')
+        a('        for (int i = 0; i < check_n; i++) {')
+        a('            int idx = i * stride;')
+        a('            if (idx >= n_items) idx = n_items - 1;')
+        a('            sample[i] = scores[idx];')
+        a('        }')
+        a('        /* simple unique count via sort */')
+        a('        for (int i = 0; i < check_n - 1; i++)')
+        a('            for (int j = i + 1; j < check_n && j < i + 50; j++)')
+        a('                if (sample[j] < sample[i]) { float t = sample[i]; sample[i] = sample[j]; sample[j] = t; }')
+        a('        unique_count = 1;')
+        a('        for (int i = 1; i < check_n; i++)')
+        a('            if (sample[i] != sample[i-1]) unique_count++;')
+        a('        free(sample);')
+        a('    }')
+        a('    printf("--- Score Verification ---\\n");')
+        a('    printf("  Min score:     %.8f\\n", s_min);')
+        a('    printf("  Max score:     %.8f\\n", s_max);')
+        a('    printf("  Mean score:    %.8f\\n", s_sum / n_items);')
+        a('    printf("  Unique scores: %d (sampled)\\n", unique_count);')
+        a('    printf("  Score[0]:      %.8f\\n", scores[0]);')
+        a('    printf("  Score[N/4]:    %.8f\\n", scores[n_items/4]);')
+        a('    printf("  Score[N/2]:    %.8f\\n", scores[n_items/2]);')
+        a('    printf("  Score[3N/4]:   %.8f\\n", scores[3*n_items/4]);')
+        a('    printf("  Score[N-1]:    %.8f\\n\\n", scores[n_items-1]);')
+        a('')
+        a('    /* ---- Benchmark: full scoring ---- */')
+        a('    double t0 = get_time_ms();')
+        a('    for (int it = 0; it < iterations; it++)')
+        a('        score_user_cpu(user, items, scores, n_items);')
+        a('    double full_ms = (get_time_ms() - t0) / iterations;')
+        a('')
+        a('    /* ---- Benchmark: score + top-K (qsort) ---- */')
+        a('    ScoredItem* ranked = (ScoredItem*)malloc(n_items * sizeof(ScoredItem));')
+        a('    int*   topk_idx = (int*)malloc(topk * sizeof(int));')
+        a('    float* topk_sc  = (float*)malloc(topk * sizeof(float));')
+        a('    if (!ranked || !topk_idx || !topk_sc) { perror("malloc"); return 1; }')
+        a('')
+        a('    t0 = get_time_ms();')
+        a('    for (int it = 0; it < iterations; it++) {')
+        a('        score_user_cpu(user, items, scores, n_items);')
+        a('        for (int i = 0; i < n_items; i++) {')
+        a('            ranked[i].score = scores[i];')
+        a('            ranked[i].index = i;')
+        a('        }')
+        a('        qsort(ranked, n_items, sizeof(ScoredItem), scored_item_cmp_desc);')
+        a('        int rk = topk < n_items ? topk : n_items;')
+        a('        for (int i = 0; i < rk; i++) {')
+        a('            topk_idx[i] = ranked[i].index;')
+        a('            topk_sc[i]  = ranked[i].score;')
+        a('        }')
+        a('    }')
+        a('    double topk_ms = (get_time_ms() - t0) / iterations;')
+        a('')
+        a('    /* ---- Results ---- */')
+        a('    printf("\\n--- Results ---\\n");')
+        a('    printf("  Full scoring:      %10.2f ms  (%8.2f K items/sec)\\n",')
+        a('           full_ms, n_items / full_ms);')
+        a('    printf("  Score + top-%-4d:  %10.2f ms  (%8.2f K items/sec)\\n",')
+        a('           topk, topk_ms, n_items / topk_ms);')
+        a('    printf("  Top-K overhead:    %10.2f ms  (%.1f%% of scoring)\\n",')
+        a('           topk_ms - full_ms,')
+        a('           full_ms > 0 ? (topk_ms - full_ms) / full_ms * 100.0 : 0.0);')
+        a('')
+        a('    /* ---- Top-K scaling ---- */')
+        a('    int k_values[] = {10, 50, 100, 500, 1000};')
+        a('    int n_kv = 5;')
+        a('    printf("\\n--- Top-K Scaling (score + qsort) ---\\n");')
+        a('    for (int ki = 0; ki < n_kv; ki++) {')
+        a('        int k = k_values[ki];')
+        a('        if (k > n_items) break;')
+        a('        int*   ki_idx = (int*)malloc(k * sizeof(int));')
+        a('        float* ki_sc  = (float*)malloc(k * sizeof(float));')
+        a('        if (!ki_idx || !ki_sc) continue;')
+        a('        t0 = get_time_ms();')
+        a('        for (int it = 0; it < iterations; it++) {')
+        a('            score_user_cpu(user, items, scores, n_items);')
+        a('            for (int j = 0; j < n_items; j++) {')
+        a('                ranked[j].score = scores[j];')
+        a('                ranked[j].index = j;')
+        a('            }')
+        a('            qsort(ranked, n_items, sizeof(ScoredItem), scored_item_cmp_desc);')
+        a('            int rk = k < n_items ? k : n_items;')
+        a('            for (int j = 0; j < rk; j++) {')
+        a('                ki_idx[j] = ranked[j].index;')
+        a('                ki_sc[j]  = ranked[j].score;')
+        a('            }')
+        a('        }')
+        a('        double k_ms = (get_time_ms() - t0) / iterations;')
+        a('        printf("  K=%-5d  %10.2f ms  (%8.2f K items/sec)\\n",')
+        a('               k, k_ms, n_items / k_ms);')
+        a('        free(ki_idx); free(ki_sc);')
+        a('    }')
+        a('')
+        a('    /* ---- Top-K preview ---- */')
+        a('    printf("\\nTop-%d preview:\\n", topk < 10 ? topk : 10);')
+        a('    int show = topk < 10 ? topk : 10;')
+        a('    for (int i = 0; i < show; i++)')
+        a('        printf("  rank[%d] = item[%d]  score=%.8f\\n", i, topk_idx[i], topk_sc[i]);')
+        a('    if (topk > 10) printf("  ... (%d more)\\n", topk - 10);')
+        a('')
+        a('    free(items); free(scores); free(ranked);')
+        a('    free(topk_idx); free(topk_sc);')
+        a('    printf("\\nDone.\\n");')
+        a('    return 0;')
+        a('}')
+        return "\n".join(lines)
 
     @staticmethod
     def _emit_split_makefile() -> str:
@@ -1847,4 +2001,1026 @@ int main(int argc, char** argv) {{
     free(scores);
     return 0;
 }}
+"""
+
+    # ==================================================================
+    # Metal (Apple Silicon GPU) code generation
+    # ==================================================================
+
+    def generate_metal_split_library(
+        self, output_dir: str, user_feature_count: int,
+    ) -> dict[str, str]:
+        """
+        Generate split-feature scoring for Apple Silicon GPU (Metal).
+
+        Produces:
+          scoring_split_core.metal        — standalone Metal shader
+          scoring_split_metal_core.h      — Obj-C++ header-only library
+          scoring_split_main_metal.mm     — Metal standalone driver
+          scoring_split_bench_metal.mm    — Metal benchmark driver
+          Makefile.metal                  — build instructions
+
+        The generated code uses MTLResourceStorageModeShared (zero-copy
+        unified memory) for all buffers, which is optimal on Apple Silicon
+        where CPU and GPU share the same physical DRAM.  The host API
+        surface is identical to the CUDA version so calling code can swap
+        backends by changing the header include.
+
+        Args:
+            output_dir: Directory for generated files
+            user_feature_count: Features 0..N-1 are user, N..end are item
+
+        Returns:
+            dict mapping file role to path
+        """
+        self._validate_split(user_feature_count)
+        user_fc = user_feature_count
+
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        files = {}
+
+        # Standalone Metal shader (.metal) — for Xcode / xcrun precompile workflows
+        shader = self._generate_metal_shader(user_fc)
+        p = out / "scoring_split_core.metal"
+        self._write(str(p), shader)
+        files["metal_shader"] = str(p)
+
+        # Obj-C++ header-only library: embeds shader, implements C API
+        core_h = self._generate_metal_host_header(user_fc)
+        p = out / "scoring_split_metal_core.h"
+        self._write(str(p), core_h)
+        files["metal_core"] = str(p)
+
+        # Metal main driver
+        p = out / "scoring_split_main_metal.mm"
+        self._write(str(p), self._emit_metal_main_driver())
+        files["metal_main"] = str(p)
+
+        # Metal benchmark driver
+        p = out / "scoring_split_bench_metal.mm"
+        self._write(str(p), self._emit_metal_bench_driver(user_fc))
+        files["metal_bench"] = str(p)
+
+        # Makefile for Metal
+        p = out / "Makefile.metal"
+        self._write(str(p), self._emit_metal_makefile())
+        files["metal_makefile"] = str(p)
+
+        item_fc = self.model_info.num_features - user_fc
+        logger.info(
+            "Generated Metal library in %s (%d user + %d item features, %d trees)",
+            output_dir, user_fc, item_fc, self.model_info.num_trees,
+        )
+        return files
+
+    # ------------------------------------------------------------------
+    # Metal helpers
+    # ------------------------------------------------------------------
+
+    def _get_metal_transform_expr(self) -> str:
+        expr = _METAL_TRANSFORMS.get(self.model_info.objective)
+        if expr is None:
+            logger.warning(
+                "Unknown objective %r, defaulting to identity transform",
+                self.model_info.objective,
+            )
+            expr = "raw"
+        return expr
+
+    def _emit_metal_tree_function(self, idx: int, tree: dict) -> str:
+        """Emit a Metal device tree function.
+
+        Tree functions use thread address space for the feature pointer
+        because callers assemble f[] in thread-local (register/stack) memory.
+        """
+        lines = [f"\nstatic inline float tree_{idx}(thread const float* f) {{"]
+        lines.append(self._emit_node(tree, indent=1))
+        lines.append("}\n")
+        return "\n".join(lines)
+
+    def _emit_metal_score_all_trees(self) -> str:
+        lines = ["\nstatic inline float score_all_trees(thread const float* f) {"]
+        lines.append("    float sum = 0.0f;")
+        for i in range(0, len(self.trees), 8):
+            for j in range(i, min(i + 8, len(self.trees))):
+                lines.append(f"    sum += tree_{j}(f);")
+        lines.append("    return sum;")
+        lines.append("}\n")
+        return "\n".join(lines)
+
+    def _generate_metal_shader(self, user_fc: int) -> str:
+        """Generate the standalone .metal shader file."""
+        item_fc = self.model_info.num_features - user_fc
+        transform = self._get_metal_transform_expr()
+
+        user_names = ", ".join(self.model_info.feature_names[:user_fc][:8])
+        if user_fc > 8:
+            user_names += ", ..."
+        item_names = ", ".join(self.model_info.feature_names[user_fc:][:8])
+        if item_fc > 8:
+            item_names += ", ..."
+
+        sections = [
+            f"/*\n"
+            f" * Auto-generated Metal compute shader for XGBoost scoring\n"
+            f" *\n"
+            f" * Source model:    {self.model_path.name}\n"
+            f" * Trees:           {self.model_info.num_trees}\n"
+            f" * Total features:  {self.model_info.num_features}\n"
+            f" *   User (0..{user_fc - 1}):   {user_fc}  [{user_names}]\n"
+            f" *   Item ({user_fc}..{self.model_info.num_features - 1}):  {item_fc}  [{item_names}]\n"
+            f" * Objective:       {self.model_info.objective}\n"
+            f" * Base score:      {self.model_info.base_score:.8f}\n"
+            f" * Generated:       {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+            f" *\n"
+            f" * Compile: xcrun -sdk macosx metal -c scoring_split_core.metal -o scoring_split_core.air\n"
+            f" *          xcrun -sdk macosx metallib scoring_split_core.air -o scoring_split_core.metallib\n"
+            f" *\n"
+            f" * DO NOT EDIT — auto-generated by cuda_codegen.\n"
+            f" */\n"
+            f"\n"
+            f"#include <metal_stdlib>\n"
+            f"using namespace metal;\n"
+            f"\n"
+            f"#define NUM_TREES         {self.model_info.num_trees}\n"
+            f"#define NUM_FEATURES      {self.model_info.num_features}\n"
+            f"#define NUM_USER_FEATURES {user_fc}\n"
+            f"#define NUM_ITEM_FEATURES {item_fc}\n"
+            f"#define BASE_SCORE        {self.model_info.base_score:.8f}f\n"
+            f"#define TOPK_BLOCK_SIZE   256\n"
+        ]
+
+        for i, tree in enumerate(self.trees):
+            sections.append(self._emit_metal_tree_function(i, tree))
+
+        sections.append(self._emit_metal_score_all_trees())
+        sections.append(self._emit_metal_score_kernel(transform))
+        sections.append(self._emit_metal_topk_kernel(transform))
+
+        return "\n".join(sections)
+
+    def _emit_metal_score_kernel(self, transform: str) -> str:
+        return f"""
+/* ==== Metal Split-Feature Scoring Kernel ==== */
+/*
+ * One Metal thread per item. Each thread assembles a full feature vector
+ * from the shared user prefix and its item suffix, traverses all decision
+ * trees, and writes its score to the output buffer.
+ *
+ * Buffers:
+ *   0: d_user  [NUM_USER_FEATURES]           — user vector (broadcast via L1)
+ *   1: d_items [n_items × NUM_ITEM_FEATURES] — item matrix
+ *   2: scores  [n_items]                      — output
+ *   3: n_items (constant uint)
+ */
+kernel void score_kernel(
+    device const float* d_user  [[buffer(0)]],
+    device const float* d_items [[buffer(1)]],
+    device float*       scores  [[buffer(2)]],
+    constant uint&      n_items [[buffer(3)]],
+    uint idx [[thread_position_in_grid]]
+) {{
+    if (idx >= n_items) return;
+
+    float f[NUM_FEATURES];
+    for (uint i = 0; i < NUM_USER_FEATURES; i++)
+        f[i] = d_user[i];
+    for (uint i = 0; i < NUM_ITEM_FEATURES; i++)
+        f[NUM_USER_FEATURES + i] = d_items[idx * NUM_ITEM_FEATURES + i];
+
+    float raw = BASE_SCORE + score_all_trees(f);
+    scores[idx] = {transform};
+}}
+"""
+
+    def _emit_metal_topk_kernel(self, transform: str) -> str:
+        return f"""
+/* ==== Metal Fused Score + Per-Threadgroup Top-K Kernel ==== */
+/*
+ * Mirrors the CUDA split-feature top-K kernel exactly.
+ *
+ * Phase 1 (this kernel):
+ *   Each threadgroup processes a range of items. Threads score items in
+ *   parallel (one item per thread per batch). After each batch, thread 0
+ *   merges results into a sorted top-K list in threadgroup shared memory.
+ *   Each threadgroup writes its local top-K candidates to global output.
+ *
+ * Phase 2 (host — score_user_topk()):
+ *   Merge grid_size × K threadgroup candidates via qsort.
+ *
+ * Threadgroup memory layout (threadgroup(0), size set by host):
+ *   float  s_topk_scores  [k]              — sorted descending
+ *   int    s_topk_indices [k]              — corresponding item indices
+ *   float  s_batch_scores [TOPK_BLOCK_SIZE]— current batch scores
+ *   int    s_batch_indices[TOPK_BLOCK_SIZE]— current batch item indices
+ *
+ * params buffer: [n_items, k]
+ */
+kernel void score_topk_kernel(
+    device const float* d_user             [[buffer(0)]],
+    device const float* d_items            [[buffer(1)]],
+    device float*       block_topk_scores  [[buffer(2)]],
+    device int*         block_topk_indices [[buffer(3)]],
+    constant int*       params             [[buffer(4)]],
+    uint tid        [[thread_index_in_threadgroup]],
+    uint bid        [[threadgroup_position_in_grid]],
+    uint block_size [[threads_per_threadgroup]],
+    uint grid_size  [[threadgroups_per_grid]],
+    threadgroup char*   smem               [[threadgroup(0)]]
+) {{
+    int n_items = params[0];
+    int k       = params[1];
+
+    threadgroup float* s_topk_scores  = (threadgroup float*)smem;
+    threadgroup int*   s_topk_indices = (threadgroup int*)(s_topk_scores + k);
+    threadgroup float* s_batch_scores  = (threadgroup float*)(s_topk_indices + k);
+    threadgroup int*   s_batch_indices = (threadgroup int*)(s_batch_scores + block_size);
+
+    int items_per_block = (n_items + (int)grid_size - 1) / (int)grid_size;
+    int block_start = (int)bid * items_per_block;
+    int block_end   = block_start + items_per_block;
+    if (block_end > n_items) block_end = n_items;
+
+    /* Cache user features in thread-local registers */
+    float user[NUM_USER_FEATURES];
+    for (uint i = 0; i < NUM_USER_FEATURES; i++)
+        user[i] = d_user[i];
+
+    /* Initialize top-K with sentinel values */
+    for (int i = (int)tid; i < k; i += (int)block_size) {{
+        s_topk_scores[i]  = -1e30f;
+        s_topk_indices[i] = -1;
+    }}
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    /* Process items in batches of block_size */
+    for (int batch = block_start; batch < block_end; batch += (int)block_size) {{
+        int idx   = batch + (int)tid;
+        float score = -1e30f;
+
+        if (idx < block_end) {{
+            float f[NUM_FEATURES];
+            for (uint i = 0; i < NUM_USER_FEATURES; i++)
+                f[i] = user[i];
+            for (uint i = 0; i < NUM_ITEM_FEATURES; i++)
+                f[NUM_USER_FEATURES + i] = d_items[idx * NUM_ITEM_FEATURES + i];
+            float raw = BASE_SCORE + score_all_trees(f);
+            score = {transform};
+        }}
+
+        s_batch_scores[tid]  = score;
+        s_batch_indices[tid] = idx;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        /* Thread 0: merge this batch into sorted top-K (insertion sort) */
+        if (tid == 0) {{
+            int batch_size = block_end - batch;
+            if (batch_size > (int)block_size) batch_size = (int)block_size;
+            float min_topk = s_topk_scores[k - 1];
+
+            for (int i = 0; i < batch_size; i++) {{
+                float s = s_batch_scores[i];
+                if (s > min_topk) {{
+                    /* Binary search for insertion position (descending) */
+                    int lo = 0, hi = k - 1;
+                    while (lo < hi) {{
+                        int mid = (lo + hi) >> 1;
+                        if (s_topk_scores[mid] >= s) lo = mid + 1;
+                        else                          hi = mid;
+                    }}
+                    /* Shift elements down to make room */
+                    for (int j = k - 1; j > lo; j--) {{
+                        s_topk_scores[j]  = s_topk_scores[j - 1];
+                        s_topk_indices[j] = s_topk_indices[j - 1];
+                    }}
+                    s_topk_scores[lo]  = s;
+                    s_topk_indices[lo] = s_batch_indices[i];
+                    min_topk = s_topk_scores[k - 1];
+                }}
+            }}
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }}
+
+    /* Write this threadgroup's top-K to global output */
+    int base = (int)bid * k;
+    for (int i = (int)tid; i < k; i += (int)block_size) {{
+        block_topk_scores[base + i]  = s_topk_scores[i];
+        block_topk_indices[base + i] = s_topk_indices[i];
+    }}
+}}
+"""
+
+    def _generate_metal_host_header(self, user_fc: int) -> str:
+        """
+        Generate the Obj-C++ header-only library.
+
+        Embeds the Metal shader as a C++11 raw string so the file is
+        self-contained — no separate .metallib required at runtime.
+        The shader is compiled once via [MTLDevice newLibraryWithSource:].
+
+        The public API mirrors the CUDA split-feature API exactly:
+          scoring_context_create / scoring_context_destroy
+          load_items / score_user / score_user_topk
+        so call-sites can swap backends with a single #include change.
+        """
+        item_fc = self.model_info.num_features - user_fc
+        shader_content = self._generate_metal_shader(user_fc)
+
+        # Use a raw-string delimiter unlikely to appear in generated shader code
+        DELIM = "METALSHADER_END"
+
+        part1 = (
+            f"#ifndef SCORING_SPLIT_METAL_CORE_H\n"
+            f"#define SCORING_SPLIT_METAL_CORE_H\n"
+            f"\n"
+            f"/*\n"
+            f" * Auto-generated Metal (Apple Silicon GPU) host library\n"
+            f" * for XGBoost split-feature scoring.\n"
+            f" *\n"
+            f" * Include this header in a .mm (Objective-C++) translation unit.\n"
+            f" * Compile with:  clang++ -fobjc-arc -std=c++17 \\\n"
+            f" *                  -framework Metal -framework Foundation\n"
+            f" *\n"
+            f" * Public API (identical to the CUDA split-feature API):\n"
+            f" *   ScoringContext* scoring_context_create(int max_items)\n"
+            f" *   void scoring_context_destroy(ScoringContext* ctx)\n"
+            f" *   int  load_items(ctx, h_items, n_items)\n"
+            f" *   int  score_user(ctx, h_user, h_scores)\n"
+            f" *   int  score_user_topk(ctx, h_user, k, h_topk_indices, h_topk_scores)\n"
+            f" *\n"
+            f" * On Apple Silicon, all buffers use MTLResourceStorageModeShared\n"
+            f" * (zero-copy unified memory).  load_items() and score results are\n"
+            f" * transferred via memcpy — no PCIe bus involved.\n"
+            f" *\n"
+            f" * DO NOT EDIT — auto-generated by cuda_codegen.\n"
+            f" */\n"
+            f"\n"
+            f"#import <Metal/Metal.h>\n"
+            f"#import <Foundation/Foundation.h>\n"
+            f"#include <stdio.h>\n"
+            f"#include <stdlib.h>\n"
+            f"#include <string.h>\n"
+            f"#include <math.h>\n"
+            f"\n"
+            f"#define NUM_TREES         {self.model_info.num_trees}\n"
+            f"#define NUM_FEATURES      {self.model_info.num_features}\n"
+            f"#define NUM_USER_FEATURES {user_fc}\n"
+            f"#define NUM_ITEM_FEATURES {item_fc}\n"
+            f"#define BASE_SCORE        {self.model_info.base_score:.8f}f\n"
+            f"#define TOPK_BLOCK_SIZE   256\n"
+            f"#define TOPK_MAX_BLOCKS   4096\n"
+        )
+
+        part2 = (
+            "\n/* Embedded Metal shader — compiled at context creation time. */\n"
+            f'static const char* METAL_SHADER_SOURCE = R"{DELIM}(\n'
+            + shader_content + "\n"
+            + f'){DELIM}";\n'
+        )
+
+        part3 = r"""
+/* Result type for top-K host-side merge sort */
+typedef struct {
+    float score;
+    int   index;
+} ScoredItem;
+
+static int scored_item_cmp_desc(const void* a, const void* b) {
+    float sa = ((const ScoredItem*)a)->score;
+    float sb = ((const ScoredItem*)b)->score;
+    if (sa > sb) return -1;
+    if (sa < sb) return  1;
+    return 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Internal Objective-C context — holds all Metal state with ARC ownership.
+ * Exposed to callers as an opaque ScoringContext* via __bridge_retained.
+ * --------------------------------------------------------------------------- */
+@interface _MetalScoringCtx : NSObject
+@property (nonatomic, strong) id<MTLDevice>               device;
+@property (nonatomic, strong) id<MTLCommandQueue>         commandQueue;
+@property (nonatomic, strong) id<MTLComputePipelineState> scorePipeline;
+@property (nonatomic, strong) id<MTLComputePipelineState> topkPipeline;
+@property (nonatomic, strong) id<MTLBuffer>               userBuffer;
+@property (nonatomic, strong) id<MTLBuffer>               itemBuffer;
+@property (nonatomic, strong) id<MTLBuffer>               scoreBuffer;
+@property (nonatomic, strong) id<MTLBuffer>               topkScoreBuffer;
+@property (nonatomic, strong) id<MTLBuffer>               topkIndexBuffer;
+@property (nonatomic, strong) id<MTLBuffer>               paramsBuffer;
+@property (nonatomic) int capacity;
+@property (nonatomic) int items_loaded;
+@property (nonatomic) int topk_max_k;
+@property (nonatomic) int topk_max_blocks;
+@end
+@implementation _MetalScoringCtx
+@end
+
+/* Opaque C handle — stored as void* so ARC bridge casts work correctly.
+ * ScoringContext* is a void* alias; internally it holds a _MetalScoringCtx. */
+typedef void ScoringContext;
+
+/**
+ * Create a Metal scoring context.
+ *
+ * Compiles the embedded Metal shader at runtime (one-time, ~50–200 ms).
+ * All GPU buffers use MTLResourceStorageModeShared: zero-copy on Apple
+ * Silicon (CPU and GPU share the same physical DRAM).
+ *
+ * @param max_items  Maximum number of items that will ever be scored
+ * @return Opaque context pointer, or NULL on failure
+ */
+ScoringContext* scoring_context_create(int max_items) {
+    _MetalScoringCtx* ctx = [_MetalScoringCtx new];
+
+    ctx.device = MTLCreateSystemDefaultDevice();
+    if (!ctx.device) {
+        fprintf(stderr, "ERROR: No Metal GPU found (requires Apple Silicon or Metal-capable GPU)\n");
+        return NULL;
+    }
+    fprintf(stderr, "Metal device: %s\n", [ctx.device.name UTF8String]);
+
+    ctx.commandQueue = [ctx.device newCommandQueue];
+
+    /* Compile embedded shader source */
+    NSError* error = nil;
+    NSString* src  = [NSString stringWithUTF8String:METAL_SHADER_SOURCE];
+    MTLCompileOptions* opts = [MTLCompileOptions new];
+    id<MTLLibrary> lib = [ctx.device newLibraryWithSource:src options:opts error:&error];
+    if (!lib) {
+        fprintf(stderr, "ERROR: Metal shader compilation failed:\n%s\n",
+                [[error localizedDescription] UTF8String]);
+        return NULL;
+    }
+
+    id<MTLFunction> scoreFunc = [lib newFunctionWithName:@"score_kernel"];
+    id<MTLFunction> topkFunc  = [lib newFunctionWithName:@"score_topk_kernel"];
+    if (!scoreFunc || !topkFunc) {
+        fprintf(stderr, "ERROR: Metal kernel functions not found in compiled library\n");
+        return NULL;
+    }
+
+    ctx.scorePipeline = [ctx.device newComputePipelineStateWithFunction:scoreFunc error:&error];
+    ctx.topkPipeline  = [ctx.device newComputePipelineStateWithFunction:topkFunc  error:&error];
+    if (!ctx.scorePipeline || !ctx.topkPipeline) {
+        fprintf(stderr, "ERROR: Failed to create Metal pipeline states: %s\n",
+                [[error localizedDescription] UTF8String]);
+        return NULL;
+    }
+
+    ctx.capacity      = max_items;
+    ctx.items_loaded  = 0;
+    ctx.topk_max_k    = 1024;
+    ctx.topk_max_blocks = (max_items + TOPK_BLOCK_SIZE - 1) / TOPK_BLOCK_SIZE;
+    if (ctx.topk_max_blocks > TOPK_MAX_BLOCKS)
+        ctx.topk_max_blocks = TOPK_MAX_BLOCKS;
+
+    /* MTLResourceStorageModeShared: CPU and GPU share the same physical pages.
+     * memcpy from host to [buffer contents] is all that's needed — no cudaMemcpy. */
+    ctx.userBuffer  = [ctx.device newBufferWithLength:NUM_USER_FEATURES * sizeof(float)
+                                              options:MTLResourceStorageModeShared];
+    ctx.itemBuffer  = [ctx.device newBufferWithLength:(size_t)max_items * NUM_ITEM_FEATURES * sizeof(float)
+                                              options:MTLResourceStorageModeShared];
+    ctx.scoreBuffer = [ctx.device newBufferWithLength:(size_t)max_items * sizeof(float)
+                                              options:MTLResourceStorageModeShared];
+    ctx.topkScoreBuffer = [ctx.device newBufferWithLength:
+                           (size_t)ctx.topk_max_blocks * ctx.topk_max_k * sizeof(float)
+                                                  options:MTLResourceStorageModeShared];
+    ctx.topkIndexBuffer = [ctx.device newBufferWithLength:
+                           (size_t)ctx.topk_max_blocks * ctx.topk_max_k * sizeof(int)
+                                                  options:MTLResourceStorageModeShared];
+    ctx.paramsBuffer    = [ctx.device newBufferWithLength:4 * sizeof(int)
+                                                  options:MTLResourceStorageModeShared];
+
+    if (!ctx.userBuffer || !ctx.itemBuffer || !ctx.scoreBuffer ||
+        !ctx.topkScoreBuffer || !ctx.topkIndexBuffer || !ctx.paramsBuffer) {
+        fprintf(stderr, "ERROR: Failed to allocate Metal buffers\n");
+        return NULL;
+    }
+
+    /* Transfer ownership to caller; must be released via scoring_context_destroy(). */
+    return (__bridge_retained ScoringContext*)ctx;
+}
+
+void scoring_context_destroy(ScoringContext* ctx) {
+    if (!ctx) return;
+    /* __bridge_transfer gives ownership to ARC, which releases on scope exit. */
+    _MetalScoringCtx* impl = (__bridge_transfer _MetalScoringCtx*)ctx;
+    (void)impl;
+}
+
+/**
+ * Load item feature vectors into GPU-accessible memory.
+ * On Apple Silicon, this is a direct memcpy — no PCIe transfer.
+ * Items remain resident in GPU memory across score_user() calls.
+ *
+ * @param ctx     Scoring context
+ * @param h_items [n_items × NUM_ITEM_FEATURES] row-major float32
+ * @param n_items Number of items
+ * @return 0 on success, -1 on error
+ */
+int load_items(ScoringContext* ctx, const float* h_items, int n_items) {
+    _MetalScoringCtx* impl = (__bridge _MetalScoringCtx*)ctx;
+    if (n_items > impl.capacity) {
+        fprintf(stderr, "ERROR: n_items (%d) exceeds capacity (%d)\n",
+                n_items, impl.capacity);
+        return -1;
+    }
+    memcpy([impl.itemBuffer contents], h_items,
+           (size_t)n_items * NUM_ITEM_FEATURES * sizeof(float));
+    impl.items_loaded = n_items;
+    return 0;
+}
+
+/**
+ * Score all loaded items against one user.
+ * Only the user feature vector is written before dispatch.
+ * On Apple Silicon: no PCIe transfers anywhere in this call.
+ *
+ * @param ctx      Context with items loaded via load_items()
+ * @param h_user   [NUM_USER_FEATURES] user feature vector
+ * @param h_scores [items_loaded] output probabilities
+ * @return 0 on success, -1 on error
+ */
+int score_user(ScoringContext* ctx, const float* h_user, float* h_scores) {
+    _MetalScoringCtx* impl = (__bridge _MetalScoringCtx*)ctx;
+    if (impl.items_loaded <= 0) {
+        fprintf(stderr, "ERROR: no items loaded (call load_items first)\n");
+        return -1;
+    }
+
+    memcpy([impl.userBuffer contents], h_user, NUM_USER_FEATURES * sizeof(float));
+
+    int n = impl.items_loaded;
+    uint n_items_u = (uint)n;
+
+    id<MTLCommandBuffer>         cmdBuf = [impl.commandQueue commandBuffer];
+    id<MTLComputeCommandEncoder> enc    = [cmdBuf computeCommandEncoder];
+
+    [enc setComputePipelineState:impl.scorePipeline];
+    [enc setBuffer:impl.userBuffer  offset:0 atIndex:0];
+    [enc setBuffer:impl.itemBuffer  offset:0 atIndex:1];
+    [enc setBuffer:impl.scoreBuffer offset:0 atIndex:2];
+    [enc setBytes:&n_items_u length:sizeof(uint) atIndex:3];
+
+    /* dispatchThreads: handles non-multiples of threadgroup size automatically */
+    MTLSize gridSize        = MTLSizeMake((NSUInteger)n, 1, 1);
+    MTLSize threadgroupSize = MTLSizeMake(256, 1, 1);
+    [enc dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+    [enc endEncoding];
+
+    [cmdBuf commit];
+    [cmdBuf waitUntilCompleted];
+
+    /* Shared memory — direct read, no device-to-host copy needed */
+    memcpy(h_scores, [impl.scoreBuffer contents], (size_t)n * sizeof(float));
+    return 0;
+}
+
+/**
+ * Score all loaded items and return only the top-K results.
+ *
+ * Uses a fused scoring + per-threadgroup top-K kernel:
+ *   Phase 1: Each threadgroup scores its range and maintains a sorted
+ *            local top-K in threadgroup shared memory (no global atomics).
+ *   Phase 2: Host merges threadgroup candidates via qsort for global top-K.
+ *
+ * On Apple Silicon, phase 2 reads candidates directly from shared memory —
+ * no device-to-host transfer needed.
+ *
+ * @param ctx             Context with items loaded via load_items()
+ * @param h_user          [NUM_USER_FEATURES] user feature vector
+ * @param k               Number of top results (1 ≤ k ≤ 1024)
+ * @param h_topk_indices  Output: [k] item indices sorted by score descending
+ * @param h_topk_scores   Output: [k] corresponding scores
+ * @return 0 on success, -1 on error
+ */
+int score_user_topk(
+    ScoringContext* ctx,
+    const float*    h_user,
+    int             k,
+    int*            h_topk_indices,
+    float*          h_topk_scores
+) {
+    _MetalScoringCtx* impl = (__bridge _MetalScoringCtx*)ctx;
+    if (impl.items_loaded <= 0) {
+        fprintf(stderr, "ERROR: no items loaded (call load_items first)\n");
+        return -1;
+    }
+    if (k <= 0 || k > impl.topk_max_k) {
+        fprintf(stderr, "ERROR: k=%d out of range [1, %d]\n", k, impl.topk_max_k);
+        return -1;
+    }
+
+    memcpy([impl.userBuffer contents], h_user, NUM_USER_FEATURES * sizeof(float));
+
+    int n = impl.items_loaded;
+    int grid_size = (n + TOPK_BLOCK_SIZE - 1) / TOPK_BLOCK_SIZE;
+    if (grid_size > impl.topk_max_blocks)
+        grid_size = impl.topk_max_blocks;
+
+    int* params = (int*)[impl.paramsBuffer contents];
+    params[0] = n;
+    params[1] = k;
+
+    /* Threadgroup memory: (k + TOPK_BLOCK_SIZE) × (float + int) */
+    NSUInteger smem_size = (NSUInteger)(k + TOPK_BLOCK_SIZE) * (sizeof(float) + sizeof(int));
+
+    id<MTLCommandBuffer>         cmdBuf = [impl.commandQueue commandBuffer];
+    id<MTLComputeCommandEncoder> enc    = [cmdBuf computeCommandEncoder];
+
+    [enc setComputePipelineState:impl.topkPipeline];
+    [enc setBuffer:impl.userBuffer        offset:0 atIndex:0];
+    [enc setBuffer:impl.itemBuffer        offset:0 atIndex:1];
+    [enc setBuffer:impl.topkScoreBuffer   offset:0 atIndex:2];
+    [enc setBuffer:impl.topkIndexBuffer   offset:0 atIndex:3];
+    [enc setBuffer:impl.paramsBuffer      offset:0 atIndex:4];
+    [enc setThreadgroupMemoryLength:smem_size atIndex:0];
+
+    MTLSize tgroups = MTLSizeMake((NSUInteger)grid_size, 1, 1);
+    MTLSize threads = MTLSizeMake(TOPK_BLOCK_SIZE, 1, 1);
+    [enc dispatchThreadgroups:tgroups threadsPerThreadgroup:threads];
+    [enc endEncoding];
+
+    [cmdBuf commit];
+    [cmdBuf waitUntilCompleted];
+
+    /* Phase 2: host merge — identical algorithm to CUDA version */
+    int n_candidates = grid_size * k;
+    float* blk_scores  = (float*)[impl.topkScoreBuffer contents];
+    int*   blk_indices = (int*)  [impl.topkIndexBuffer  contents];
+
+    ScoredItem* candidates = (ScoredItem*)malloc((size_t)n_candidates * sizeof(ScoredItem));
+    if (!candidates) {
+        fprintf(stderr, "ERROR: malloc failed for candidates\n");
+        return -1;
+    }
+    int valid = 0;
+    for (int i = 0; i < n_candidates; i++) {
+        if (blk_indices[i] >= 0) {
+            candidates[valid].score = blk_scores[i];
+            candidates[valid].index = blk_indices[i];
+            valid++;
+        }
+    }
+    qsort(candidates, (size_t)valid, sizeof(ScoredItem), scored_item_cmp_desc);
+
+    int result_k = k < valid ? k : valid;
+    for (int i = 0; i < result_k; i++) {
+        h_topk_scores[i]  = candidates[i].score;
+        h_topk_indices[i] = candidates[i].index;
+    }
+    for (int i = result_k; i < k; i++) {
+        h_topk_scores[i]  = -1e30f;
+        h_topk_indices[i] = -1;
+    }
+    free(candidates);
+    return 0;
+}
+
+#endif /* SCORING_SPLIT_METAL_CORE_H */
+"""
+        return part1 + part2 + part3
+
+    def _emit_metal_main_driver(self) -> str:
+        """Emit the Metal standalone main() driver.
+
+        The score_block logic is identical to the CUDA main driver because
+        the Metal API has the same function signatures.  The only additions
+        are the Obj-C++ header and @autoreleasepool.
+        """
+        score_block = (
+            "    ScoringContext* ctx = scoring_context_create(n_items);\n"
+            "    if (!ctx) { fprintf(stderr, \"Failed to create Metal context\\n\"); return 1; }\n"
+            "    if (load_items(ctx, items, n_items) != 0) return 1;\n"
+            "\n"
+            "    if (topk > 0) {\n"
+            "        int*   topk_indices = (int*)malloc(topk * sizeof(int));\n"
+            "        float* topk_scores  = (float*)malloc(topk * sizeof(float));\n"
+            "        if (!topk_indices || !topk_scores) { perror(\"malloc topk\"); return 1; }\n"
+            "        if (score_user_topk(ctx, user, topk, topk_indices, topk_scores) != 0) return 1;\n"
+            "        scoring_context_destroy(ctx);\n"
+            "        if (output_path) {\n"
+            "            FILE* fout = fopen(output_path, \"wb\");\n"
+            "            if (!fout) { perror(\"fopen output\"); return 1; }\n"
+            "            fwrite(topk_indices, sizeof(int),   topk, fout);\n"
+            "            fwrite(topk_scores,  sizeof(float), topk, fout);\n"
+            "            fclose(fout);\n"
+            "            fprintf(stderr, \"Wrote top-%d results to %s\\n\", topk, output_path);\n"
+            "        } else {\n"
+            "            for (int i = 0; i < topk; i++)\n"
+            "                printf(\"rank[%d] = item[%d]  score=%.8f\\n\", i, topk_indices[i], topk_scores[i]);\n"
+            "        }\n"
+            "        free(topk_indices); free(topk_scores);\n"
+            "    } else {\n"
+            "        if (score_user(ctx, user, scores) != 0) return 1;\n"
+            "        scoring_context_destroy(ctx);\n"
+            "        if (output_path) {\n"
+            "            FILE* fout = fopen(output_path, \"wb\");\n"
+            "            if (!fout) { perror(\"fopen output\"); return 1; }\n"
+            "            fwrite(scores, sizeof(float), (size_t)n_items, fout);\n"
+            "            fclose(fout);\n"
+            "            fprintf(stderr, \"Wrote %d scores to %s\\n\", n_items, output_path);\n"
+            "        } else {\n"
+            "            int limit = n_items < 20 ? n_items : 20;\n"
+            "            for (int i = 0; i < limit; i++)\n"
+            "                printf(\"item[%d] = %.8f\\n\", i, scores[i]);\n"
+            "            if (n_items > 20)\n"
+            "                printf(\"... (%d more items)\\n\", n_items - 20);\n"
+            "        }\n"
+            "    }\n"
+        )
+
+        return f"""#include "scoring_split_metal_core.h"
+
+/* ==== Standalone Entry Point ==== */
+
+int main(int argc, char** argv) {{
+    @autoreleasepool {{
+
+    if (argc < 3) {{
+        fprintf(stderr,
+            "Usage: %s <user.bin> <items.bin> [output.bin] [-k topK]\\n"
+            "\\n"
+            "  user.bin:   binary float32 [%d] (one user feature vector)\\n"
+            "  items.bin:  binary float32 [N x %d] (item features, row-major)\\n"
+            "  output.bin: binary output (omit to print first 20 scores)\\n"
+            "  -k topK:    return only the top K results (ranked by score)\\n",
+            argv[0], NUM_USER_FEATURES, NUM_ITEM_FEATURES);
+        return 1;
+    }}
+
+    const char* user_path  = argv[1];
+    const char* items_path = argv[2];
+    const char* output_path = NULL;
+    int topk = 0;
+
+    for (int a = 3; a < argc; a++) {{
+        if (strcmp(argv[a], "-k") == 0 && a + 1 < argc) {{
+            topk = atoi(argv[++a]);
+        }} else if (!output_path) {{
+            output_path = argv[a];
+        }}
+    }}
+
+    FILE* fu = fopen(user_path, "rb");
+    if (!fu) {{ perror("fopen user"); return 1; }}
+    float user[NUM_USER_FEATURES];
+    if (fread(user, sizeof(float), NUM_USER_FEATURES, fu) != NUM_USER_FEATURES) {{
+        fprintf(stderr, "Failed to read %d user features\\n", NUM_USER_FEATURES);
+        fclose(fu); return 1;
+    }}
+    fclose(fu);
+
+    FILE* fi = fopen(items_path, "rb");
+    if (!fi) {{ perror("fopen items"); return 1; }}
+    fseek(fi, 0, SEEK_END);
+    long fsize = ftell(fi);
+    fseek(fi, 0, SEEK_SET);
+    int n_items = (int)(fsize / ((long)NUM_ITEM_FEATURES * (long)sizeof(float)));
+    if (n_items <= 0) {{ fprintf(stderr, "Invalid items file\\n"); fclose(fi); return 1; }}
+
+    fprintf(stderr, "Scoring %d items (%d user + %d item features)...\\n",
+            n_items, NUM_USER_FEATURES, NUM_ITEM_FEATURES);
+
+    float* items  = (float*)malloc((size_t)fsize);
+    float* scores = (float*)malloc((size_t)n_items * sizeof(float));
+    if (!items || !scores) {{ perror("malloc"); return 1; }}
+    fread(items, sizeof(float), (size_t)n_items * NUM_ITEM_FEATURES, fi);
+    fclose(fi);
+
+{score_block}
+    free(items); free(scores);
+    }} /* @autoreleasepool */
+    return 0;
+}}
+"""
+
+    def _emit_metal_bench_driver(self, user_fc: int) -> str:
+        feat_arrays = self._emit_feature_range_arrays()
+        lines = []
+        a = lines.append
+        a('#include "scoring_split_metal_core.h"')
+        a('#include <time.h>')
+        a('')
+        a(feat_arrays)
+        a('')
+        a('static double get_time_ms(void) {')
+        a('    struct timespec ts;')
+        a('    clock_gettime(CLOCK_MONOTONIC, &ts);')
+        a('    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;')
+        a('}')
+        a('')
+        a('static float randf_range(unsigned int *state, float lo, float hi) {')
+        a('    *state = *state * 1103515245u + 12345u;')
+        a('    float t = (float)(*state >> 16) / 65535.0f;')
+        a('    return lo + t * (hi - lo);')
+        a('}')
+        a('')
+        a('int main(int argc, char** argv) {')
+        a('    @autoreleasepool {')
+        a('    int n_items    = 1000000;')
+        a('    int topk       = 100;')
+        a('    int warmup     = 3;')
+        a('    int iterations = 20;')
+        a('    unsigned int seed = 42;')
+        a('')
+        a('    for (int i = 1; i < argc; i++) {')
+        a('        if      (strcmp(argv[i], "-n") == 0 && i+1 < argc) n_items    = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-k") == 0 && i+1 < argc) topk       = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-w") == 0 && i+1 < argc) warmup     = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-i") == 0 && i+1 < argc) iterations = atoi(argv[++i]);')
+        a('        else if (strcmp(argv[i], "-s") == 0 && i+1 < argc) seed       = (unsigned)atoi(argv[++i]);')
+        a('        else {')
+        a('            fprintf(stderr,')
+        a('                "Usage: %s [-n items] [-k topK] [-w warmup] [-i iters] [-s seed]\\n"')
+        a('                "\\n  Defaults: -n 1000000 -k 100 -w 3 -i 20 -s 42\\n", argv[0]);')
+        a('            return (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) ? 0 : 1;')
+        a('        }')
+        a('    }')
+        a('')
+        a('    printf("=== Metal (Apple Silicon GPU) Split-Feature Scoring Benchmark ===\\n");')
+        a('    printf("  Items:         %d\\n", n_items);')
+        a('    printf("  Top-K:         %d\\n", topk);')
+        a('    printf("  User features: %d\\n", NUM_USER_FEATURES);')
+        a('    printf("  Item features: %d\\n", NUM_ITEM_FEATURES);')
+        a('    printf("  Trees:         %d\\n", NUM_TREES);')
+        a('    printf("  Warmup:        %d\\n", warmup);')
+        a('    printf("  Iterations:    %d\\n\\n", iterations);')
+        a('')
+        a('    /* Generate random data in realistic feature ranges */')
+        a('    unsigned int rng = seed;')
+        a('    float user[NUM_USER_FEATURES];')
+        a('    for (int i = 0; i < NUM_USER_FEATURES; i++)')
+        a('        user[i] = randf_range(&rng, FEAT_MIN[i], FEAT_MAX[i]);')
+        a('')
+        a('    size_t items_bytes = (size_t)n_items * NUM_ITEM_FEATURES * sizeof(float);')
+        a('    float* items = (float*)malloc(items_bytes);')
+        a('    if (!items) { perror("malloc items"); return 1; }')
+        a('    for (int j = 0; j < n_items; j++)')
+        a('        for (int f = 0; f < NUM_ITEM_FEATURES; f++)')
+        a('            items[j * NUM_ITEM_FEATURES + f] =')
+        a('                randf_range(&rng, FEAT_MIN[NUM_USER_FEATURES + f], FEAT_MAX[NUM_USER_FEATURES + f]);')
+        a('    printf("Generated %.1f MB of random item features\\n", items_bytes / (1024.0 * 1024.0));')
+        a('')
+        a('    /* Create context (compiles Metal shader) */')
+        a('    double t0 = get_time_ms();')
+        a('    ScoringContext* ctx = scoring_context_create(n_items);')
+        a('    if (!ctx) { fprintf(stderr, "Failed to create Metal context\\n"); return 1; }')
+        a('    double compile_ms = get_time_ms() - t0;')
+        a('    printf("Metal shader compile: %.0f ms\\n", compile_ms);')
+        a('')
+        a('    /* Load items (memcpy to unified memory — no PCIe on Apple Silicon) */')
+        a('    t0 = get_time_ms();')
+        a('    if (load_items(ctx, items, n_items) != 0) return 1;')
+        a('    double load_ms = get_time_ms() - t0;')
+        a('    printf("Item load (memcpy):   %10.2f ms  (%.1f GB/s)\\n\\n",')
+        a('           load_ms, items_bytes / load_ms / 1e6);')
+        a('')
+        a('    float* scores   = (float*)malloc((size_t)n_items * sizeof(float));')
+        a('    int*   topk_idx = (int*)malloc(topk * sizeof(int));')
+        a('    float* topk_sc  = (float*)malloc(topk * sizeof(float));')
+        a('    if (!scores || !topk_idx || !topk_sc) { perror("malloc"); return 1; }')
+        a('')
+        a('    /* Warmup */')
+        a('    printf("Warming up (%d runs)...\\n", warmup);')
+        a('    for (int w = 0; w < warmup; w++) {')
+        a('        score_user(ctx, user, scores);')
+        a('        score_user_topk(ctx, user, topk, topk_idx, topk_sc);')
+        a('    }')
+        a('')
+        a('    /* Score verification */')
+        a('    score_user(ctx, user, scores);')
+        a('    float s_min = scores[0], s_max = scores[0];')
+        a('    double s_sum = 0.0;')
+        a('    for (int i = 0; i < n_items; i++) {')
+        a('        if (scores[i] < s_min) s_min = scores[i];')
+        a('        if (scores[i] > s_max) s_max = scores[i];')
+        a('        s_sum += scores[i];')
+        a('    }')
+        a('    printf("--- Score Verification ---\\n");')
+        a('    printf("  Min score:  %.8f\\n", s_min);')
+        a('    printf("  Max score:  %.8f\\n", s_max);')
+        a('    printf("  Mean score: %.8f\\n", s_sum / n_items);')
+        a('    printf("  Score[0]:   %.8f\\n", scores[0]);')
+        a('    printf("  Score[N/2]: %.8f\\n\\n", scores[n_items/2]);')
+        a('')
+        a('    /* Benchmark: full scoring */')
+        a('    t0 = get_time_ms();')
+        a('    for (int it = 0; it < iterations; it++)')
+        a('        score_user(ctx, user, scores);')
+        a('    double full_ms = (get_time_ms() - t0) / iterations;')
+        a('')
+        a('    /* Benchmark: top-K */')
+        a('    t0 = get_time_ms();')
+        a('    for (int it = 0; it < iterations; it++)')
+        a('        score_user_topk(ctx, user, topk, topk_idx, topk_sc);')
+        a('    double topk_ms = (get_time_ms() - t0) / iterations;')
+        a('')
+        a('    printf("\\n--- Results ---\\n");')
+        a('    printf("  score_user():      %10.2f ms  (%8.2f M items/sec)\\n",')
+        a('           full_ms, n_items / full_ms / 1000.0);')
+        a('    printf("  score_user_topk(): %10.2f ms  (%8.2f M items/sec)\\n",')
+        a('           topk_ms, n_items / topk_ms / 1000.0);')
+        a('    printf("  Note: unified memory — no PCIe transfers on Apple Silicon\\n");')
+        a('')
+        a('    /* Top-K scaling */')
+        a('    int k_values[] = {10, 50, 100, 500, 1000};')
+        a('    int n_kv = 5;')
+        a('    printf("\\n--- Top-K Scaling ---\\n");')
+        a('    for (int ki = 0; ki < n_kv; ki++) {')
+        a('        int k = k_values[ki];')
+        a('        if (k > n_items || k > 1024) break;')
+        a('        int*   ki_idx = (int*)malloc(k * sizeof(int));')
+        a('        float* ki_sc  = (float*)malloc(k * sizeof(float));')
+        a('        score_user_topk(ctx, user, k, ki_idx, ki_sc); /* warmup */')
+        a('        t0 = get_time_ms();')
+        a('        for (int it = 0; it < iterations; it++)')
+        a('            score_user_topk(ctx, user, k, ki_idx, ki_sc);')
+        a('        double k_ms = (get_time_ms() - t0) / iterations;')
+        a('        printf("  K=%-5d  %10.2f ms  (%8.2f M items/sec)\\n",')
+        a('               k, k_ms, n_items / k_ms / 1000.0);')
+        a('        free(ki_idx); free(ki_sc);')
+        a('    }')
+        a('')
+        a('    /* Top-K preview */')
+        a('    printf("\\nTop-%d preview:\\n", topk < 10 ? topk : 10);')
+        a('    int show = topk < 10 ? topk : 10;')
+        a('    for (int i = 0; i < show; i++)')
+        a('        printf("  rank[%d] = item[%d]  score=%.8f\\n", i, topk_idx[i], topk_sc[i]);')
+        a('    if (topk > 10) printf("  ... (%d more)\\n", topk - 10);')
+        a('')
+        a('    scoring_context_destroy(ctx);')
+        a('    free(items); free(scores);')
+        a('    free(topk_idx); free(topk_sc);')
+        a('    printf("\\nDone.\\n");')
+        a('    } /* @autoreleasepool */')
+        a('    return 0;')
+        a('}')
+        return "\n".join(lines)
+
+    @staticmethod
+    def _emit_metal_makefile() -> str:
+        return """# Auto-generated Makefile for Metal (Apple Silicon GPU) split-feature scoring
+#
+# Requires: macOS with Xcode command-line tools (xcrun, clang++)
+#           Apple Silicon Mac (M1/M2/M3/M4) for best performance
+#
+# Targets:
+#   make -f Makefile.metal bench     — build & run Metal benchmark
+#   make -f Makefile.metal main      — build Metal main driver
+#   make -f Makefile.metal metallib  — precompile .metal → .metallib
+#   make -f Makefile.metal clean
+#
+# Override build dir:  make -f Makefile.metal BUILD_DIR=./out bench
+
+CXX       ?= clang++
+CXXFLAGS  ?= -O2 -std=c++17 -fobjc-arc
+FRAMEWORKS = -framework Metal -framework Foundation
+BUILD_DIR ?= ../build
+
+# Detect xcrun (required for Metal shader precompilation)
+HAS_XCRUN := $(shell command -v xcrun 2>/dev/null)
+
+.PHONY: all bench main metallib clean
+
+all: bench main
+
+# ---- Main driver ----
+
+main: $(BUILD_DIR)/scoring_split_metal
+
+$(BUILD_DIR)/scoring_split_metal: scoring_split_main_metal.mm scoring_split_metal_core.h
+\t@mkdir -p $(BUILD_DIR)
+\t$(CXX) $(CXXFLAGS) $(FRAMEWORKS) -o $@ scoring_split_main_metal.mm
+\t@echo "Built: $@"
+
+# ---- Benchmark ----
+
+bench: $(BUILD_DIR)/scoring_split_bench_metal
+\t$(BUILD_DIR)/scoring_split_bench_metal $(BENCH_ARGS)
+
+$(BUILD_DIR)/scoring_split_bench_metal: scoring_split_bench_metal.mm scoring_split_metal_core.h
+\t@mkdir -p $(BUILD_DIR)
+\t$(CXX) $(CXXFLAGS) $(FRAMEWORKS) -o $@ scoring_split_bench_metal.mm
+\t@echo "Built: $@"
+
+# ---- Precompile Metal shader (optional — for Xcode / production use) ----
+
+metallib: $(BUILD_DIR)/scoring_split_core.metallib
+
+$(BUILD_DIR)/scoring_split_core.metallib: scoring_split_core.metal
+\t@if [ -z "$(HAS_XCRUN)" ]; then echo "ERROR: xcrun not found"; exit 1; fi
+\t@mkdir -p $(BUILD_DIR)
+\txcrun -sdk macosx metal -c scoring_split_core.metal -o $(BUILD_DIR)/scoring_split_core.air
+\txcrun -sdk macosx metallib $(BUILD_DIR)/scoring_split_core.air -o $@
+\t@echo "Built: $@"
+
+clean:
+\trm -f $(BUILD_DIR)/scoring_split_metal
+\trm -f $(BUILD_DIR)/scoring_split_bench_metal
+\trm -f $(BUILD_DIR)/scoring_split_core.air
+\trm -f $(BUILD_DIR)/scoring_split_core.metallib
 """

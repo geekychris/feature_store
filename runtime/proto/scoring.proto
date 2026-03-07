@@ -1,0 +1,271 @@
+syntax = "proto3";
+
+package scorched;
+
+option java_package = "com.platform.scorched";
+option java_outer_classname = "ScorchedProto";
+option go_package = "github.com/platform/scorched/proto";
+
+// ============================================================
+// ScoreService — the hot path for ad/document ranking
+// ============================================================
+service ScoreService {
+  // Score a user against a named dataset, return top-K ranked candidates
+  rpc ScoreTopK(ScoreRequest) returns (ScoreResponse);
+
+  // Score multiple users against the same dataset
+  rpc ScoreBatch(ScoreBatchRequest) returns (ScoreBatchResponse);
+
+  // Score and stream back all results (for large datasets)
+  rpc ScoreAll(ScoreRequest) returns (stream ScoreAllChunk);
+}
+
+// ============================================================
+// DatasetService — manage named CandidateMatrix datasets
+// ============================================================
+service DatasetService {
+  // Load dataset from inline protobuf payload
+  rpc LoadDataset(LoadDatasetRequest) returns (LoadDatasetResponse);
+
+  // Load dataset from a server-local file path
+  rpc LoadDatasetFromFile(LoadDatasetFromFileRequest) returns (LoadDatasetResponse);
+
+  // Client streams CandidateMatrix chunks for large datasets
+  rpc StreamLoadDataset(stream DatasetChunk) returns (LoadDatasetResponse);
+
+  // Unload a named dataset, freeing memory
+  rpc UnloadDataset(UnloadDatasetRequest) returns (UnloadDatasetResponse);
+
+  // List all loaded datasets
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse);
+
+  // Get detailed info about a specific dataset
+  rpc GetDatasetInfo(DatasetInfoRequest) returns (DatasetInfoResponse);
+}
+
+// ============================================================
+// StatsService — observability and health
+// ============================================================
+service StatsService {
+  // Aggregate runtime stats: request counts, latencies, throughput
+  rpc GetStats(GetStatsRequest) returns (StatsResponse);
+
+  // Health check
+  rpc GetHealthz(GetHealthzRequest) returns (HealthResponse);
+}
+
+// ============================================================
+// Score messages
+// ============================================================
+
+message ScoreRequest {
+  // Name of the loaded dataset to score against
+  string dataset_name = 1;
+
+  // User feature vector (NUM_USER_FEATURES floats).
+  // If empty, a zero vector is used (item-only scoring).
+  repeated float user_vector = 2;
+
+  // Number of top results to return
+  int32 top_k = 3;
+
+  // Optional request ID for tracing
+  string request_id = 4;
+}
+
+message ScoredCandidate {
+  // Index into the CandidateMatrix
+  int32 index = 1;
+
+  // Model score (sigmoid output for binary:logistic)
+  float score = 2;
+}
+
+message ScoreResponse {
+  // Top-K candidates, sorted descending by score
+  repeated ScoredCandidate candidates = 1;
+
+  // Number of items scored
+  int32 items_scored = 2;
+
+  // Scoring latency in microseconds
+  int64 latency_us = 3;
+
+  // Backend used: "cpu" or "cuda"
+  string backend = 4;
+
+  string request_id = 5;
+}
+
+// Batch scoring
+message ScoreBatchRequest {
+  string dataset_name = 1;
+  repeated UserScoreRequest users = 2;
+  int32 top_k = 3;
+  string request_id = 4;
+}
+
+message UserScoreRequest {
+  string user_id = 1;
+  repeated float user_vector = 2;
+}
+
+message UserScoreResponse {
+  string user_id = 1;
+  repeated ScoredCandidate candidates = 2;
+  int64 latency_us = 3;
+}
+
+message ScoreBatchResponse {
+  repeated UserScoreResponse results = 1;
+  int64 total_latency_us = 2;
+  string backend = 3;
+  string request_id = 4;
+}
+
+// Streaming all scores
+message ScoreAllChunk {
+  // Batch of (index, score) pairs
+  repeated ScoredCandidate candidates = 1;
+  bool is_last = 2;
+}
+
+// ============================================================
+// Dataset messages
+// ============================================================
+
+message LoadDatasetRequest {
+  // Unique name for this dataset (e.g. "ads_us", "product_recs_v2")
+  string name = 1;
+
+  // CandidateMatrix: row-major float32 [num_items x num_item_features]
+  repeated float candidate_matrix = 2;
+
+  // Number of items (rows)
+  int32 num_items = 3;
+
+  // Number of features per item (columns) — must match NUM_ITEM_FEATURES
+  int32 num_item_features = 4;
+
+  // Optional: replace existing dataset with same name
+  bool replace_if_exists = 5;
+}
+
+message LoadDatasetFromFileRequest {
+  string name = 1;
+
+  // Server-local file path (binary float32, row-major)
+  string file_path = 2;
+
+  int32 num_item_features = 3;
+
+  bool replace_if_exists = 4;
+
+  // File format: "binary" (default), "protobuf"
+  string format = 5;
+}
+
+message DatasetChunk {
+  // First chunk must include metadata
+  string name = 1;
+  int32 num_item_features = 2;
+  bool replace_if_exists = 3;
+
+  // Chunk of the CandidateMatrix (contiguous floats)
+  repeated float data = 4;
+
+  // Set true on the final chunk
+  bool is_last = 5;
+}
+
+message LoadDatasetResponse {
+  bool success = 1;
+  string message = 2;
+  string dataset_name = 3;
+  int32 num_items = 4;
+  int64 memory_bytes = 5;
+  int64 load_duration_us = 6;
+}
+
+message UnloadDatasetRequest {
+  string name = 1;
+}
+
+message UnloadDatasetResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ListDatasetsRequest {}
+
+message DatasetSummary {
+  string name = 1;
+  int32 num_items = 2;
+  int32 num_item_features = 3;
+  int64 memory_bytes = 4;
+  string loaded_at = 5;
+  int64 score_request_count = 6;
+}
+
+message ListDatasetsResponse {
+  repeated DatasetSummary datasets = 1;
+}
+
+message DatasetInfoRequest {
+  string name = 1;
+}
+
+message DatasetInfoResponse {
+  DatasetSummary summary = 1;
+  // Feature value ranges (min/max per feature)
+  repeated FeatureRange feature_ranges = 2;
+}
+
+message FeatureRange {
+  int32 feature_index = 1;
+  float min_value = 2;
+  float max_value = 3;
+}
+
+// ============================================================
+// Stats messages
+// ============================================================
+
+message GetStatsRequest {}
+
+message StatsResponse {
+  // Server info
+  string version = 1;
+  string backend = 2;
+  int64 uptime_seconds = 3;
+
+  // Request stats
+  int64 total_score_requests = 4;
+  int64 total_items_scored = 5;
+
+  // Latency percentiles (microseconds)
+  int64 p50_latency_us = 6;
+  int64 p95_latency_us = 7;
+  int64 p99_latency_us = 8;
+
+  // Dataset stats
+  int32 loaded_datasets = 9;
+  int64 total_dataset_memory_bytes = 10;
+
+  // Throughput
+  double avg_items_per_second = 11;
+}
+
+message GetHealthzRequest {}
+
+message HealthResponse {
+  enum Status {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+  }
+  Status status = 1;
+  string message = 2;
+  bool cuda_available = 3;
+  int32 datasets_loaded = 4;
+}

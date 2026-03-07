@@ -1,0 +1,22 @@
+[package]
+name = "scorched-client"
+version = "0.1.0"
+edition = "2021"
+description = "Rust client for the scorched scoring runtime"
+
+[dependencies]
+tonic = "0.12"
+prost = "0.13"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[[example]]
+name = "score_example"
+path = "examples/score_example.rs"
+
+[[example]]
+name = "benchmark"
+path = "examples/benchmark.rs"

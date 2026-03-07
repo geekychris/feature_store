@@ -24,7 +24,24 @@ def cmd_generate(args):
     user_fc = getattr(args, "user_features", None)
     library = getattr(args, "library", False)
 
-    if library and user_fc:
+    metal = getattr(args, "metal", False)
+
+    if library and user_fc and metal:
+        # Metal library mode: Apple Silicon GPU files
+        files = gen.generate_metal_split_library(args.output, user_fc)
+        item_fc = gen.model_info.num_features - user_fc
+        print(f"Generated Metal split-feature library in: {args.output}")
+        print(f"  Trees:          {gen.model_info.num_trees}")
+        print(f"  User features:  {user_fc}  "
+              f"[{', '.join(gen.model_info.feature_names[:user_fc])}]")
+        print(f"  Item features:  {item_fc}  "
+              f"[{', '.join(gen.model_info.feature_names[user_fc:user_fc+8])}"
+              + (", ..." if item_fc > 8 else "") + "]")
+        print(f"  Files:")
+        for role, path in sorted(files.items()):
+            print(f"    {role:14s}  {path}")
+        print(f"\n  Build:  cd {args.output} && make -f Makefile.metal bench")
+    elif library and user_fc:
         # Library mode: separate core + drivers + benchmark + Makefile
         files = gen.generate_split_library(args.output, user_fc)
         item_fc = gen.model_info.num_features - user_fc
@@ -160,6 +177,13 @@ def main():
         help="Generate as a library: separate core header, main driver, "
              "benchmark driver, and Makefile. --output is a directory. "
              "Requires --user-features.",
+    )
+    gen_p.add_argument(
+        "--metal", action="store_true",
+        help="Generate Apple Silicon GPU (Metal) code instead of CUDA. "
+             "Produces Obj-C++ (.mm) files using Metal Shading Language. "
+             "Requires --user-features and --library. "
+             "Build with: clang++ -fobjc-arc -framework Metal -framework Foundation",
     )
     gen_p.set_defaults(func=cmd_generate)
 

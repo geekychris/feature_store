@@ -724,34 +724,64 @@ make bench_cuda BENCH_ARGS="-n 10000000 -k 100 -i 50"
 === CPU Split-Feature Scoring Benchmark ===
   Items:         2000000
   Top-K:         100
+  User features: 13
+  Item features: 26
   Trees:         300
   Warmup:        5
   Iterations:    10
+  Seed:          42
 
 Generated 198.4 MB of random item features
 
+--- Score Verification ---
+  Min score:     0.01455481
+  Max score:     0.77891028
+  Mean score:    0.10327558
+  Unique scores: 100000 (sampled)
+  Score[0]:      0.15051216
+  Score[N/4]:    0.07990445
+  Score[N/2]:    0.08007417
+  Score[3N/4]:   0.09332924
+  Score[N-1]:    0.10830466
+
 --- Results ---
-  Full scoring:          594.68 ms  ( 3363.15 K items/sec)
-  Score + top-100 :      599.13 ms  ( 3338.17 K items/sec)
-  Top-K overhead:          4.45 ms  (0.7% of scoring)
+  Full scoring:         2284.97 ms  (  875.29 K items/sec)
+  Score + top-100 :     2447.95 ms  (  817.01 K items/sec)
+  Top-K overhead:        162.98 ms  (7.1% of scoring)
 
 --- Top-K Scaling (score + qsort) ---
-  K=10         598.75 ms  ( 3340.27 K items/sec)
-  K=50         598.45 ms  ( 3341.98 K items/sec)
-  K=100        590.47 ms  ( 3387.16 K items/sec)
-  K=500        602.98 ms  ( 3316.84 K items/sec)
-  K=1000       596.36 ms  ( 3353.70 K items/sec)
+  K=10        2466.95 ms  (  810.72 K items/sec)
+  K=50        2457.28 ms  (  813.91 K items/sec)
+  K=100       2459.29 ms  (  813.24 K items/sec)
+  K=500       2483.21 ms  (  805.41 K items/sec)
+  K=1000      2504.12 ms  (  798.69 K items/sec)
+
+Top-10 preview:
+  rank[0] = item[849604]  score=0.77891028
+  rank[1] = item[387600]  score=0.69030815
+  rank[2] = item[1529675]  score=0.67121404
+  rank[3] = item[1551538]  score=0.63400304
+  rank[4] = item[520585]  score=0.62364495
+  rank[5] = item[235380]  score=0.62314802
+  rank[6] = item[233039]  score=0.61647654
+  rank[7] = item[376994]  score=0.60310519
+  rank[8] = item[101400]  score=0.59873712
+  rank[9] = item[1694832]  score=0.59101075
+  ... (90 more)
 ```
 
-Single-core CPU throughput: ~3.4M items/sec (300 trees, depth 6). Top-K
-selection via qsort adds <1% overhead regardless of K.
+Single-core CPU throughput: ~875K items/sec (300 trees, depth 6). Random
+test data is generated from per-feature ranges derived from tree split
+thresholds, producing realistic score diversity (0.015–0.779 range, 100K+
+unique scores). Top-K selection via qsort adds ~7% overhead.
 
 **Benchmark output includes:**
 
+- Score verification: min/max/mean scores, unique count, and samples at key positions
 - Full scoring throughput (K items/sec for CPU, M items/sec for CUDA)
 - Score + top-K throughput and overhead percentage
 - Top-K scaling across K={10, 50, 100, 500, 1000}
-- Preview of top-ranked items
+- Preview of top-ranked items with scores
 - CUDA benchmark also reports GPU info, H→D load time, and D→H transfer savings
 
 ## Quick Start
