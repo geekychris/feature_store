@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Feature Store logo" width="180">
+</p>
+
 # ML Feature Store
 
 A production-grade ML Feature Store built with Java Spring Boot, providing dual online/offline storage, gRPC + REST APIs, a Vaadin Flow admin UI, and training integration in both Python and Java.
